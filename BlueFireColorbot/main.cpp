@@ -29,7 +29,8 @@
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
 
-#define PROCESS_NAME L"VALORANT  " 
+//#define PROCESS_NAME L"VALORANT  " 
+#define PROCESS_NAME L"aimlab  " 
 #define NAMEOF(name) #name
 
 using Microsoft::WRL::ComPtr;
@@ -77,7 +78,11 @@ bool flickAim = false;
 int flickAimTime = 20;
 float speed = 0.2;
 int maxX = 600;
+//int uneccessoryData = 0;
+//float antherUncessoryData = 0.4;
 int maxY = 300;
+//bool unnecssory = true;
+//bool plzchange = false;
 int full360 = 0;//21428;
 int holdKeyIndex = 0;
 int holdKey = VK_MENU;
@@ -186,6 +191,22 @@ void MoveMouse(int dx, int dy) {
 	interception_send(context, device, &stroke, 1);
 }
 
+void ClickWithMouse()
+{
+	InterceptionMouseStroke& mstroke = *(InterceptionMouseStroke*)&stroke;
+	mstroke.flags = INTERCEPTION_MOUSE_MOVE_ABSOLUTE;
+	mstroke.state = INTERCEPTION_MOUSE_LEFT_BUTTON_DOWN;
+	mstroke.information = 0;
+	//mstroke.x = dx + offset[0];
+	//mstroke.y = dy + offset[1];
+	interception_send(context, device, &stroke, 1);
+
+	mstroke.flags = INTERCEPTION_MOUSE_MOVE_ABSOLUTE;
+	mstroke.state = INTERCEPTION_MOUSE_LEFT_BUTTON_UP;
+	mstroke.information = 0;
+	interception_send(context, device, &stroke, 1);
+}
+
 typedef void(*ColorSortingMethod)(char*, int, int);
 ColorSortingMethod currentSortingMethod;
 
@@ -226,7 +247,7 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 
 bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue) {
 	// updated PURPLE FROM https://www.unknowncheats.me/forum/valorant/437368-updated-colors-pixel-bot-act-4-a.html
-	if(green >= 170) {
+	/*if(green >= 170) {
 		return false;
 	}
 
@@ -242,7 +263,10 @@ bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue
 		red - green >= 60 &&
 		blue - green >= 60 &&
 		red >= 110 &&
-		blue >= 100;
+		blue >= 100;*/
+	//valorant color code
+	
+	return (red > 230 && green < 100 && blue < 100) ;
 
 	//return red > 240 && green > 90 && green < 190 && blue > 240; // OLD COLOR FUNCTION
 }
@@ -257,7 +281,8 @@ void FirstColorSorting(char* data, int height, int width) {
 			unsigned short green = data[base + 1] & 255;
 			unsigned short blue = data[base] & 255;
 			if(IsPurpleColor(red, green, blue)) {
-				MoveMouseFromScreenPosition(Vector2(x - hWidth, y - hHeight), height, width);
+				MoveMouseFromScreenPosition(Vector2(x - hWidth, y - hHeight), height, width);	
+				ClickWithMouse();
 				return;
 			}
 		}
@@ -325,11 +350,49 @@ void BlueFireColorSorting(char* data, int height, int width) {
 	}
 }
 
+//custom code 
+struct handle_data {
+	unsigned long process_id;
+	HWND window_handle;
+};
+
+BOOL CALLBACK enum_windows_callback(HWND handle, LPARAM lparam) {
+	auto& data = *reinterpret_cast<handle_data*>(lparam);
+
+	unsigned long process_id = 0;
+	GetWindowThreadProcessId(handle, &process_id);
+
+	if (data.process_id != process_id) {
+		return TRUE;
+	}
+	//Log::get()->msg("data.process_id: {} | process_id: {}", data.process_id, process_id);
+	data.window_handle = handle;
+	return FALSE;
+}
+
+HWND find_main_window() {
+	handle_data data{};
+
+	data.process_id = GetCurrentProcessId();
+	data.window_handle = nullptr;
+	EnumWindows(enum_windows_callback, reinterpret_cast<LPARAM>(&data));
+
+	return data.window_handle;
+}
+
+//ends
 
 bool InitColor() {
 	// ==== FIND WINDOW ==== 
 	RECT rect;
-	game_window = FindWindowW(NULL, PROCESS_NAME);
+	//game_window = FindWindowW(NULL, PROCESS_NAME);
+	//game_window = FindWindowW(NULL, L"aimlab_tb");
+	game_window = FindWindowW(NULL, L"3D Aim Trainer");
+	//to check process
+	/*unsigned long process_id = 0;
+	GetWindowThreadProcessId(game_window, &process_id);*/
+	//game_window = find_main_window();
+
 	GetClientRect(game_window, &rect);
 
 	// ==== SCALING FACTOR ====
@@ -609,7 +672,7 @@ int main(int, char**)
 	WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("ImGui Example"), NULL };
 	::RegisterClassEx(&wc);
 	   
-	HWND hwnd = ::CreateWindow(wc.lpszClassName, _T("BLUEFIRE1337's Colorbot V3"), WS_OVERLAPPEDWINDOW, 0, 0, 400, 500, NULL, NULL, wc.hInstance, NULL);
+	HWND hwnd = ::CreateWindow(wc.lpszClassName, _T("Agent's Colorbot V3"), WS_OVERLAPPEDWINDOW, 0, 0, 400, 500, NULL, NULL, wc.hInstance, NULL);
 
 
 	HICON hIcon = LoadIcon(wc.hInstance, MAKEINTRESOURCE(MAINICON));

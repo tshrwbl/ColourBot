@@ -5,8 +5,8 @@ offsetX=0
 offsetY=5
 flickAim=0
 flickAimTime=30
-full360=21428
-sortingCounter=0
+full360=6742
+sortingCounter=1
 #All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 holdKey=18
 isHold=1
