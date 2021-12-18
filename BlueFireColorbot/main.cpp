@@ -29,8 +29,8 @@
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
 
-//#define PROCESS_NAME L"VALORANT  " 
-#define PROCESS_NAME L"aimlab  " 
+#define PROCESS_NAME L"VALORANT  " 
+//#define PROCESS_NAME L"test.mp4 - VLC media player"
 #define NAMEOF(name) #name
 
 using Microsoft::WRL::ComPtr;
@@ -382,12 +382,34 @@ HWND find_main_window() {
 
 //ends
 
+//BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
+//{
+//	char buffer[128];
+//	int written = GetWindowTextA(hwnd, buffer, 128);
+//	if (written && strstr(buffer, "Mozilla Firefox") != NULL) {
+//		*(HWND*)lParam = hwnd;
+//		return FALSE;
+//	}
+//	return TRUE;
+//}
+//
+//HWND GetWindowImprov()
+//{
+//	HWND hWnd = NULL;
+//	EnumWindows(EnumWindowsProc, &hWnd);
+//	return hWnd;
+//}
+
 bool InitColor() {
 	// ==== FIND WINDOW ==== 
 	RECT rect;
-	//game_window = FindWindowW(NULL, PROCESS_NAME);
-	//game_window = FindWindowW(NULL, L"aimlab_tb");
-	game_window = FindWindowW(NULL, L"3D Aim Trainer");
+	
+	
+	game_window = FindWindowW(NULL, PROCESS_NAME);
+	//Not for future me
+	//WIndows name shoudl match exactly with process name
+	
+	
 	//to check process
 	/*unsigned long process_id = 0;
 	GetWindowThreadProcessId(game_window, &process_id);*/
