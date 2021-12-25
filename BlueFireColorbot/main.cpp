@@ -1,4 +1,4 @@
-//MADE BY BLUEFIRE1337
+//MADE BY ME
 //THIS PROJECT IS UNDER GNU General Public License v3.0
 //SO NO SELLING THIS AS YOUR OWN
 //TO MAKE YOUR OWN LOOK AT https://www.unknowncheats.me/forum/valorant/444573-perfect-valorant-colorbot.html
@@ -609,7 +609,7 @@ int main(int, char**)
 	WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("ImGui Example"), NULL };
 	::RegisterClassEx(&wc);
 	   
-	HWND hwnd = ::CreateWindow(wc.lpszClassName, _T("BLUEFIRE1337's Colorbot V3"), WS_OVERLAPPEDWINDOW, 0, 0, 400, 500, NULL, NULL, wc.hInstance, NULL);
+	HWND hwnd = ::CreateWindow(wc.lpszClassName, _T("LABADABA dub dub's"), WS_OVERLAPPEDWINDOW, 0, 0, 400, 500, NULL, NULL, wc.hInstance, NULL);
 
 
 	HICON hIcon = LoadIcon(wc.hInstance, MAKEINTRESOURCE(MAINICON));
