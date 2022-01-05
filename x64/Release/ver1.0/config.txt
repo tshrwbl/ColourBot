@@ -4,7 +4,7 @@ maxY=279
 offsetX=0
 offsetY=3
 flickAim=1
-flickAimTime=70
+flickAimTime=15
 full360=6429
 sortingCounter=6
 #All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes

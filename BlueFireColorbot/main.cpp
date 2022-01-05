@@ -30,7 +30,10 @@
 using namespace std;
 
 #define PROCESS_NAME L"VALORANT  " 
+//#define PROCESS_NAME L"Untitled - Paint" 
+
 #define NAMEOF(name) #name
+#define DebugDir L"Test"
 
 using Microsoft::WRL::ComPtr;
 
@@ -74,11 +77,14 @@ struct Vector2 {
 };
 
 bool flickAim = false;
+bool recoilControl = false;
+bool overloadManualInputs = false;
+bool isDebugging = false;
 int flickAimTime = 20;
 float speed = 0.2;
 int maxX = 600;
 int maxY = 300;
-int full360 = 0;//21428;
+int full360 = 0;//6429;	
 int holdKeyIndex = 0;
 int holdKey = VK_MENU;
 bool isHold = false;
@@ -87,6 +93,9 @@ bool testFull360 = false;
 int offset[2] = {
 	0,5
 };
+
+int recoilOffset = 0;
+bool recoilControlStart = false; 
 
 bool isZommed = false;
 const int hold_arry_size = 15;
@@ -182,7 +191,7 @@ void MoveMouse(int dx, int dy) {
 	mstroke.flags = 0;
 	mstroke.information = 0;
 	mstroke.x = dx + offset[0];
-	mstroke.y = dy + offset[1];
+	mstroke.y = dy + offset[1] + recoilOffset;
 	interception_send(context, device, &stroke, 1);
 }
 
@@ -213,6 +222,30 @@ int GetCoordsY(int delta, int total) {
 
 void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 	SetIsZoomed();
+
+	if (overloadManualInputs && GetAsyncKeyState(VK_LBUTTON))
+	{
+		return;
+	}
+
+	if (recoilControl && GetAsyncKeyState(VK_LBUTTON))
+	{
+		if (!recoilControlStart)
+		{
+			recoilControlStart = true;
+			recoilOffset = 0;
+		}
+		else if(recoilOffset < 6)
+		{
+			recoilOffset++;
+		}
+	}
+	else
+	{
+		recoilControlStart = false;
+		recoilOffset = 0;
+	}
+
 	int moveX = GetCoordsX(front.x, width);
 	int moveY = GetCoordsY(front.y, height);
 	if(flickAim) {
@@ -264,7 +297,31 @@ void FirstColorSorting(char* data, int height, int width) {
 	}
 }
 
-void BlueFireColorSorting(char* data, int height, int width) {
+int counter = 0;
+void GetImageForDebugging(char* data, int height, int width) {
+	
+	int hWidth = width / 2;
+	int hHeight = height / 2;
+	//save ofstream file in debug folder
+	ofstream img("Test/debugpic" + std::to_string(counter++) + ".ppm"); //#include <fstream>
+
+	img << "P3" << endl;
+	img << maxX*2 << endl;
+	img << maxY*2 << endl;
+	img << "255" << endl;
+
+	for (int y = hHeight - maxY; y < hHeight + maxY; y++) {
+		for (int x = hWidth - maxX; x < hWidth + maxX; x++) {
+			int base = (x + y * desc.Width) * 4;
+			unsigned short red = data[base + 2] & 255;
+			unsigned short green = data[base + 1] & 255;
+			unsigned short blue = data[base] & 255;
+			img << red << " " << green << " " << blue << "\n";
+		}
+	}
+}
+
+void CustomPrioritySorting(char* data, int height, int width) {
 	const int maxCount = 5;
 	const int forSize = 100;
 
@@ -415,6 +472,16 @@ bool InitColor() {
 HDC hdc_target;
 
 bool ScreenGrab() {
+
+	//For debugging 
+	unsigned short last_r = 0;
+	unsigned short last_g = 0;
+	unsigned short last_b = 0;
+	std::chrono::high_resolution_clock::time_point start;
+	if(isDebugging)
+		start = std::chrono::high_resolution_clock::now();
+	
+
 	// ==== SCEENGRAB ==== 
 
 	HDC hDC = nullptr;
@@ -452,11 +519,31 @@ bool ScreenGrab() {
 
 	currentSortingMethod(data, desc.Height, desc.Width);
 
+
 	if(pFrameCopy != nullptr) {
 		lImmediateContext->Unmap(pFrameCopy, 0);
 
 		pFrameCopy->Release();
 		lImmediateContext->Flush();
+	}
+
+	// TESTING FRAME UPDATE, REMOVE THIS
+	if (isDebugging)
+	{
+		int base = (100 + 100 * desc.Width) * 4;
+		unsigned short red = data[base + 2];
+		unsigned short green = data[base + 1];
+		unsigned short blue = data[base];
+		if ((last_b != blue || last_g != green || last_r != red) && (red > 0 && blue > 0 && green > 0)) {
+			auto finish = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double> elapsed = finish - start;
+			cout << "Time: " << (elapsed.count() * 1000) << "ms" << endl;
+			start = std::chrono::high_resolution_clock::now();
+			last_b = blue;
+			last_g = green;
+			last_r = red;
+		}
+		GetImageForDebugging(data, desc.Height, desc.Width);
 	}
 	return true;
 }
@@ -503,8 +590,8 @@ void UpdateSortingMethod(int id) {
 	switch(id % 2)
 	{
 	case 0:
-		currentSortingMethod = BlueFireColorSorting;
-		currentSortingMethodName = "Blue Fire Sorter";
+		currentSortingMethod = CustomPrioritySorting;
+		currentSortingMethodName = "Priority Sorter";
 		currentSortingMethodDescript = "A bit slower, but priorities heads";
 		break;
 	case 1:
@@ -546,6 +633,8 @@ bool ReadConfig() {
 			READ(holdKey);
 			READ(isHold);
 			READ(invertHold);
+			READ(recoilControl);
+			READ(overloadManualInputs);
 		}
 
 		offset[0] = offsetX;
@@ -573,6 +662,8 @@ void SaveConfig() {
 	WRITE(flickAimTime);
 	WRITE(full360);
 	WRITE(sortingCounter);
+	WRITE(recoilControl);
+	WRITE(overloadManualInputs);
 
 	cFile << "#All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes\n";
 	if(holdKeyIndex > 0) {
@@ -603,6 +694,9 @@ int main(int, char**)
 	}
 	thread t1(ScreenGrabMain);
 	t1.detach();
+
+	//create Test directory if not exists
+	CreateDirectory(DebugDir, NULL);
 
 	UpdateSortingMethod(sortingCounter);
 
@@ -701,6 +795,9 @@ int main(int, char**)
 				ImGui::Text("Flick Aimbot");
 				ImGui::Checkbox("Flick", &flickAim);
 				ImGui::InputInt("Flick Update ms", &flickAimTime);
+				ImGui::Checkbox("Recoil Control" , &recoilControl);
+				ImGui::Checkbox("Overload Manual Inputs" , &overloadManualInputs);
+
 
 				if(flickAimTime < 0) {
 					flickAimTime = 0;
@@ -746,7 +843,11 @@ int main(int, char**)
 			if(full360 <= 0) {
 				ImGui::Text("TO USE THIS COLORBOT \nFULL360 MUST BE CONFIGURED CORRECTLY\nTHIS IS DIFFERENT FOR ALL COMPUTERS\n\nTHE OPTIMAL SPEED I FOUND OUT TO BE AROUND 0.2\nSO IMO, ONLY CHANGE FULL360\n(FULL360 SHOULD BE AROUND 5000-25000)");
 			}
-			//ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+			ImGui::Checkbox("Debug" , &isDebugging);
+
+			if(isDebugging)
+				ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
 			ImGui::End();
 		}
 
