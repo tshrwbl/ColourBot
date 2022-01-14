@@ -1,7 +1,4 @@
-//MADE BY ME
-//THIS PROJECT IS UNDER GNU General Public License v3.0
-//SO NO SELLING THIS AS YOUR OWN
-//TO MAKE YOUR OWN LOOK AT https://www.unknowncheats.me/forum/valorant/444573-perfect-valorant-colorbot.html
+//Shared at https://www.unknowncheats.me/forum/valorant/444573-perfect-valorant-colorbot.html
 
 #include "imgui_impl_win32.h"
 #include <d3d9.h>
@@ -10,7 +7,6 @@
 #include <WinUser.h>
 #include "imgui.h"
 #include "imgui_impl_dx9.h"
-
 #include <windows.h>
 #include <iostream>
 #include <dxgi.h>
@@ -22,7 +18,6 @@
 #include <list>
 #include <wrl/client.h>
 #include <thread>
-
 #include "interception.h"
 #include <string>
 
@@ -33,7 +28,7 @@ using namespace std;
 //#define PROCESS_NAME L"Untitled - Paint" 
 
 #define NAMEOF(name) #name
-#define DebugDir L"Test"
+#define DEBUGDIR L"Test"
 
 using Microsoft::WRL::ComPtr;
 
@@ -97,7 +92,7 @@ int offset[2] = {
 int recoilOffset = 0;
 bool recoilControlStart = false; 
 
-bool isZommed = false;
+bool isZoomed = false;
 const int hold_arry_size = 15;
 static const char* holdKeys[hold_arry_size]{
    "Left mouse button",
@@ -199,26 +194,29 @@ typedef void(*ColorSortingMethod)(char*, int, int);
 ColorSortingMethod currentSortingMethod;
 
 void SetIsZoomed() { // CALL THIS EVERY FRAME
-	isZommed = GetAsyncKeyState(VK_RBUTTON);
+	isZoomed = GetAsyncKeyState(VK_RBUTTON);
 }
 
 int Full360() {
-	return isZommed ? full360 : (full360 * 8 / 10);
+	return isZoomed ? full360 : (full360 * 8 / 10);
 }
 
 int GetCoordsX(int delta, int total) {
 
 	double lookAt = delta * 2.0 / total;
-	double degrees = atan(lookAt * tan((isZommed ? 41.5 : 52.0) * DEGTORAD)) * RADTODEG;
+	double degrees = atan(lookAt * tan((isZoomed ? 41.5 : 52.0) * DEGTORAD)) * RADTODEG;
 	return (Full360() * degrees) / 360;
 }
 
 int GetCoordsY(int delta, int total) {
 
 	double lookAt = delta * 2.0 / total;
-	double degrees = atan(lookAt * tan((isZommed ? 26.5 : 36) * DEGTORAD)) * RADTODEG;
+	double degrees = atan(lookAt * tan((isZoomed ? 26.5 : 36) * DEGTORAD)) * RADTODEG;
 	return (Full360() * degrees) / 360;
 }
+
+std::chrono::high_resolution_clock::time_point timerStart;
+int timeDiff;
 
 void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 	SetIsZoomed();
@@ -228,16 +226,43 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 		return;
 	}
 
+	int moveX = GetCoordsX(front.x, width);
+	int moveY = GetCoordsY(front.y, height);
+
 	if (recoilControl && GetAsyncKeyState(VK_LBUTTON))
 	{
 		if (!recoilControlStart)
 		{
 			recoilControlStart = true;
+			timerStart = std::chrono::high_resolution_clock::now();
+			timeDiff = 0;
 			recoilOffset = 0;
 		}
-		else if(recoilOffset < 6)
+		else if(recoilOffset < 7)
 		{
-			recoilOffset++;
+			auto end = std::chrono::high_resolution_clock::now();			
+			timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(end - timerStart).count();
+			if (timeDiff > 150)
+			{
+				recoilOffset = ((timeDiff - 150) / 50);
+				
+				if (recoilOffset > 6)
+				{
+					return;
+				}
+
+				if (abs(moveX) < 2)
+					moveX = 0;
+
+				if (abs(moveY) < 2)
+					moveY = 0;
+			}
+			//cout << "Time: " << timeDiff << "ms " << recoilOffset << endl;
+			//timerStart = std::chrono::high_resolution_clock::now();
+		}
+		else
+		{
+			return;
 		}
 	}
 	else
@@ -246,8 +271,7 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 		recoilOffset = 0;
 	}
 
-	int moveX = GetCoordsX(front.x, width);
-	int moveY = GetCoordsY(front.y, height);
+
 	if(flickAim) {
 		MoveMouse(moveX, moveY);
 		Sleep(flickAimTime);
@@ -696,7 +720,7 @@ int main(int, char**)
 	t1.detach();
 
 	//create Test directory if not exists
-	CreateDirectory(DebugDir, NULL);
+	CreateDirectory(DEBUGDIR, NULL);
 
 	UpdateSortingMethod(sortingCounter);
 
@@ -806,9 +830,9 @@ int main(int, char**)
 
 			ImGui::Text("Input Settings");
 			ImGui::Checkbox("Hold", &isHold);
-			if(isHold) {
+			/*if(isHold) {
 				ImGui::Checkbox("Invert Hold", &invertHold);
-			}
+			}*/
 
 			if(holdKeyIndex > 0) {
 				ImGui::Combo(isHold ? "Hold key" : "Toggle Key", &holdKeyIndex, holdKeys, hold_arry_size);

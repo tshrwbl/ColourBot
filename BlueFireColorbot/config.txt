@@ -11,5 +11,5 @@ recoilControl=1
 overloadManualInputs=0
 #All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 holdKey=4
-isHold=0
+isHold=1
 invertHold=0
