@@ -195,8 +195,8 @@ void MoveMouse(int dx, int dy) {
 	mstroke.x = dx + offset[0];
 	mstroke.y = dy + offset[1] + recoilOffset;
 	if (isDebugging)
-		logging::INFO("Cords: " + dx + ',' + dy);
-		//cout << "Cords: x-" << dx << "y-" << dy << endl;
+		//logging::INFO("Cords: " + dx + ',' + dy);
+		cout << "Cords: x-" << dx << "y-" << dy << endl;
 	interception_send(context, device, &stroke, 1);
 }
 
@@ -268,8 +268,8 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 					moveY = 0;
 			}
 			if (isDebugging)
-				logging::INFO( "timeDiff: " + timeDiff + ' ' + recoilOffset);
-				//cout << "Time: " << timeDiff << "ms " << recoilOffset << endl;
+				//logging::INFO( "timeDiff: " + timeDiff + ' ' + recoilOffset);
+				cout << "Time: " << timeDiff << "ms " << recoilOffset << endl;
 			//timerStart = std::chrono::high_resolution_clock::now();
 		}
 		else
@@ -584,8 +584,8 @@ bool ScreenGrab() {
 		if ((last_b != blue || last_g != green || last_r != red) && (red > 0 && blue > 0 && green > 0)) {
 			auto finish = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double> elapsed = finish - start;
-			//cout << "Time: " << (elapsed.count() * 1000) << "ms" << endl;
-			logging::INFO(  "Time: " + std::to_string((elapsed.count() * 1000)));
+			cout << "Time: " << (elapsed.count() * 1000) << "ms" << endl;
+			//logging::INFO(  "Time: " + std::to_string((elapsed.count() * 1000)));
 			start = std::chrono::high_resolution_clock::now();
 			last_b = blue;
 			last_g = green;
@@ -735,7 +735,7 @@ void SaveConfig() {
 // Main code
 int main(int, char**)
 {
-	logging::INFO("Start of application");
+	//logging::INFO("Start of application");
 	cout << "Fetching Config..." << endl;
 	if(!ReadConfig()) {
 		cout << "Failed to read config" << endl;
@@ -936,7 +936,7 @@ int main(int, char**)
 	::DestroyWindow(hwnd);
 	::UnregisterClass(wc.lpszClassName, wc.hInstance);
 
-	logging::INFO("Exit....");
+	//logging::INFO("Exit....");
 	return 0;
 }
 
