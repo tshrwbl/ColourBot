@@ -90,6 +90,9 @@
     <ClInclude Include="interception.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="logging.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Resource.rc">

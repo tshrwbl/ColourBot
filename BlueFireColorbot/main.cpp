@@ -20,12 +20,13 @@
 #include <thread>
 #include "interception.h"
 #include <string>
+#include "logging.hpp"
 
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
 
-#define PROCESS_NAME L"VALORANT  " 
-//#define PROCESS_NAME L"Untitled - Paint" 
+//#define PROCESS_NAME L"VALORANT  " 
+#define PROCESS_NAME L"Untitled - Paint" 
 
 #define NAMEOF(name) #name
 #define DEBUGDIR L"Test"
@@ -79,6 +80,12 @@ int flickAimTime = 20;
 float speed = 0.2;
 int maxX = 600;
 int maxY = 300;
+int trueX = 0;
+int trueY = 0;
+
+int onTargetLockX = 50;
+int onTargetLockY = 50;
+
 int full360 = 0;//6429;	
 int holdKeyIndex = 0;
 int holdKey = VK_MENU;
@@ -187,10 +194,13 @@ void MoveMouse(int dx, int dy) {
 	mstroke.information = 0;
 	mstroke.x = dx + offset[0];
 	mstroke.y = dy + offset[1] + recoilOffset;
+	if (isDebugging)
+		logging::INFO("Cords: " + dx + ',' + dy);
+		//cout << "Cords: x-" << dx << "y-" << dy << endl;
 	interception_send(context, device, &stroke, 1);
 }
 
-typedef void(*ColorSortingMethod)(char*, int, int);
+typedef bool(*ColorSortingMethod)(char*, int, int);
 ColorSortingMethod currentSortingMethod;
 
 void SetIsZoomed() { // CALL THIS EVERY FRAME
@@ -257,7 +267,9 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 				if (abs(moveY) < 2)
 					moveY = 0;
 			}
-			//cout << "Time: " << timeDiff << "ms " << recoilOffset << endl;
+			if (isDebugging)
+				logging::INFO( "timeDiff: " + timeDiff + ' ' + recoilOffset);
+				//cout << "Time: " << timeDiff << "ms " << recoilOffset << endl;
 			//timerStart = std::chrono::high_resolution_clock::now();
 		}
 		else
@@ -275,6 +287,9 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 	if(flickAim) {
 		MoveMouse(moveX, moveY);
 		Sleep(flickAimTime);
+
+		trueX = onTargetLockX;
+		trueY = onTargetLockY;
 	}
 	else {
 		MoveMouse(moveX * speed, moveY * speed);
@@ -304,21 +319,22 @@ bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue
 	//return red > 240 && green > 90 && green < 190 && blue > 240; // OLD COLOR FUNCTION
 }
 
-void FirstColorSorting(char* data, int height, int width) {
+bool FirstColorSorting(char* data, int height, int width) {
 	int hWidth = width / 2;
 	int hHeight = height / 2;
-	for(int y = hHeight - maxY; y < hHeight + maxY; y++) {
-		for(int x = hWidth - maxX; x < hWidth + maxX; x++) {
+	for(int y = hHeight - trueY; y < hHeight + trueY; y++) {
+		for(int x = hWidth - trueX; x < hWidth + trueX; x++) {
 			int base = (x + y * desc.Width) * 4;
 			unsigned short red = data[base + 2] & 255;
 			unsigned short green = data[base + 1] & 255;
 			unsigned short blue = data[base] & 255;
 			if(IsPurpleColor(red, green, blue)) {
 				MoveMouseFromScreenPosition(Vector2(x - hWidth, y - hHeight), height, width);
-				return;
+				return true;
 			}
 		}
 	}
+	return false;
 }
 
 int counter = 0;
@@ -330,12 +346,12 @@ void GetImageForDebugging(char* data, int height, int width) {
 	ofstream img("Test/debugpic" + std::to_string(counter++) + ".ppm"); //#include <fstream>
 
 	img << "P3" << endl;
-	img << maxX*2 << endl;
-	img << maxY*2 << endl;
+	img << trueX*2 << endl;
+	img << trueY*2 << endl;
 	img << "255" << endl;
 
-	for (int y = hHeight - maxY; y < hHeight + maxY; y++) {
-		for (int x = hWidth - maxX; x < hWidth + maxX; x++) {
+	for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
+		for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
 			int base = (x + y * desc.Width) * 4;
 			unsigned short red = data[base + 2] & 255;
 			unsigned short green = data[base + 1] & 255;
@@ -345,7 +361,7 @@ void GetImageForDebugging(char* data, int height, int width) {
 	}
 }
 
-void CustomPrioritySorting(char* data, int height, int width) {
+bool CustomPrioritySorting(char* data, int height, int width) {
 	const int maxCount = 5;
 	const int forSize = 100;
 
@@ -353,8 +369,8 @@ void CustomPrioritySorting(char* data, int height, int width) {
 	int hWidth = width / 2;
 	int hHeight = height / 2;
 
-	for(int y = hHeight - maxY; y < hHeight + maxY; y++) {
-		for(int x = hWidth - maxX; x < hWidth + maxX; x++) {
+	for(int y = hHeight - trueY; y < hHeight + trueY; y++) {
+		for(int x = hWidth - trueX; x < hWidth + trueX; x++) {
 			int base = (x + y * desc.Width) * 4;
 			unsigned short red = data[base + 2] & 255;
 			unsigned short green = data[base + 1] & 255;
@@ -374,7 +390,7 @@ void CustomPrioritySorting(char* data, int height, int width) {
 		for(auto& current : vects) // access by reference to avoid copying
 		{
 			bool canUpdate = true;
-			if(abs(current.x) > maxX || abs(current.y) > maxY) {
+			if(abs(current.x) > trueX || abs(current.y) > trueY) {
 				continue;
 			}
 			for(auto& forb : forbidden) // access by reference to avoid copying
@@ -402,8 +418,11 @@ void CustomPrioritySorting(char* data, int height, int width) {
 				});
 			Vector2 front = forbidden.front();
 			MoveMouseFromScreenPosition(front, height, width);
+			return true;
 		}
 	}
+
+	return false;
 }
 
 
@@ -541,7 +560,11 @@ bool ScreenGrab() {
 		return false;
 	}
 
-	currentSortingMethod(data, desc.Height, desc.Width);
+	if (!currentSortingMethod(data, desc.Height, desc.Width) && flickAim)
+	{
+		trueX = maxX;
+		trueY = maxY;
+	}
 
 
 	if(pFrameCopy != nullptr) {
@@ -561,13 +584,14 @@ bool ScreenGrab() {
 		if ((last_b != blue || last_g != green || last_r != red) && (red > 0 && blue > 0 && green > 0)) {
 			auto finish = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double> elapsed = finish - start;
-			cout << "Time: " << (elapsed.count() * 1000) << "ms" << endl;
+			//cout << "Time: " << (elapsed.count() * 1000) << "ms" << endl;
+			logging::INFO(  "Time: " + std::to_string((elapsed.count() * 1000)));
 			start = std::chrono::high_resolution_clock::now();
 			last_b = blue;
 			last_g = green;
 			last_r = red;
 		}
-		GetImageForDebugging(data, desc.Height, desc.Width);
+		//GetImageForDebugging(data, desc.Height, desc.Width);
 	}
 	return true;
 }
@@ -598,6 +622,13 @@ void ScreenGrabMain() {
 			}
 			else {
 				Sleep(10);
+				//if (flickAim)
+				//{
+				trueX = maxX;
+				trueY = maxY;
+				//}
+				/*if (isDebugging)
+					system("cls");*/
 			}
 		}
 		else {
@@ -704,6 +735,7 @@ void SaveConfig() {
 // Main code
 int main(int, char**)
 {
+	logging::INFO("Start of application");
 	cout << "Fetching Config..." << endl;
 	if(!ReadConfig()) {
 		cout << "Failed to read config" << endl;
@@ -811,7 +843,8 @@ int main(int, char**)
 				}
 			}
 			else {
-				ImGui::SliderFloat("Speed", &speed, 0.0f, 1.0f);
+				//ImGui::SliderFloat("Speed", &speed, 0.0f, 1.0f);
+				ImGui::InputFloat("Speed", &speed, 0.0f, 1.0f);
 				ImGui::SliderInt("FovX", &maxX, 50, width / 2);
 				ImGui::SliderInt("FovY", &maxY, 50, height / 2);
 				ImGui::InputInt2("Offset XY", offset);
@@ -903,6 +936,7 @@ int main(int, char**)
 	::DestroyWindow(hwnd);
 	::UnregisterClass(wc.lpszClassName, wc.hInstance);
 
+	logging::INFO("Exit....");
 	return 0;
 }
 

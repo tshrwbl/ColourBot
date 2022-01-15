@@ -1,8 +1,8 @@
 speed=0.2
-maxX=372
+maxX=586
 maxY=261
 offsetX=0
-offsetY=2
+offsetY=1
 flickAim=0
 flickAimTime=30
 full360=6429
