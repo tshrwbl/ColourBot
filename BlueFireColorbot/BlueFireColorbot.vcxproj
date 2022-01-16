@@ -176,7 +176,6 @@
     <ClInclude Include="imstb_textedit.h" />
     <ClInclude Include="imstb_truetype.h" />
     <ClInclude Include="interception.h" />
-    <ClInclude Include="logging.hpp" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>

@@ -20,13 +20,12 @@
 #include <thread>
 #include "interception.h"
 #include <string>
-#include "logging.hpp"
 
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
 
-//#define PROCESS_NAME L"VALORANT  " 
-#define PROCESS_NAME L"Untitled - Paint" 
+#define PROCESS_NAME L"VALORANT  " 
+//#define PROCESS_NAME L"Untitled - Paint" 
 
 #define NAMEOF(name) #name
 #define DEBUGDIR L"Test"
@@ -97,7 +96,7 @@ int offset[2] = {
 };
 
 int recoilOffset = 0;
-bool recoilControlStart = false; 
+bool recoilControlStart = false;
 
 bool isZoomed = false;
 const int hold_arry_size = 15;
@@ -159,8 +158,8 @@ InterceptionDevice device;
 InterceptionStroke stroke;
 
 void NormalMouse() {
-	while(interception_receive(context, device = interception_wait(context), &stroke, 1) > 0) {
-		if(interception_is_mouse(device))
+	while (interception_receive(context, device = interception_wait(context), &stroke, 1) > 0) {
+		if (interception_is_mouse(device))
 		{
 			InterceptionMouseStroke& mstroke = *(InterceptionMouseStroke*)&stroke;
 			interception_send(context, device, &stroke, 1);
@@ -175,8 +174,8 @@ void InitMoveMouse() {
 	interception_set_filter(context, interception_is_mouse, INTERCEPTION_FILTER_MOUSE_MOVE);
 	device = interception_wait(context);
 
-	while(interception_receive(context, device = interception_wait(context), &stroke, 1) > 0) {
-		if(interception_is_mouse(device))
+	while (interception_receive(context, device = interception_wait(context), &stroke, 1) > 0) {
+		if (interception_is_mouse(device))
 		{
 			InterceptionMouseStroke& mstroke = *(InterceptionMouseStroke*)&stroke;
 			interception_send(context, device, &stroke, 1);
@@ -248,14 +247,14 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 			timeDiff = 0;
 			recoilOffset = 0;
 		}
-		else if(recoilOffset < 7)
+		else if (recoilOffset < 7)
 		{
-			auto end = std::chrono::high_resolution_clock::now();			
+			auto end = std::chrono::high_resolution_clock::now();
 			timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(end - timerStart).count();
 			if (timeDiff > 150)
 			{
 				recoilOffset = ((timeDiff - 150) / 50);
-				
+
 				if (recoilOffset > 6)
 				{
 					return;
@@ -284,7 +283,7 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 	}
 
 
-	if(flickAim) {
+	if (flickAim) {
 		MoveMouse(moveX, moveY);
 		Sleep(flickAimTime);
 
@@ -298,11 +297,11 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 
 bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue) {
 	// updated PURPLE FROM https://www.unknowncheats.me/forum/valorant/437368-updated-colors-pixel-bot-act-4-a.html
-	if(green >= 170) {
+	if (green >= 170) {
 		return false;
 	}
 
-	if(green >= 120) {
+	if (green >= 120) {
 		return abs(red - blue) <= 8 &&
 			red - green >= 50 &&
 			blue - green >= 50 &&
@@ -322,13 +321,13 @@ bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue
 bool FirstColorSorting(char* data, int height, int width) {
 	int hWidth = width / 2;
 	int hHeight = height / 2;
-	for(int y = hHeight - trueY; y < hHeight + trueY; y++) {
-		for(int x = hWidth - trueX; x < hWidth + trueX; x++) {
+	for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
+		for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
 			int base = (x + y * desc.Width) * 4;
 			unsigned short red = data[base + 2] & 255;
 			unsigned short green = data[base + 1] & 255;
 			unsigned short blue = data[base] & 255;
-			if(IsPurpleColor(red, green, blue)) {
+			if (IsPurpleColor(red, green, blue)) {
 				MoveMouseFromScreenPosition(Vector2(x - hWidth, y - hHeight), height, width);
 				return true;
 			}
@@ -339,15 +338,15 @@ bool FirstColorSorting(char* data, int height, int width) {
 
 int counter = 0;
 void GetImageForDebugging(char* data, int height, int width) {
-	
+
 	int hWidth = width / 2;
 	int hHeight = height / 2;
 	//save ofstream file in debug folder
 	ofstream img("Test/debugpic" + std::to_string(counter++) + ".ppm"); //#include <fstream>
 
 	img << "P3" << endl;
-	img << trueX*2 << endl;
-	img << trueY*2 << endl;
+	img << trueX * 2 << endl;
+	img << trueY * 2 << endl;
 	img << "255" << endl;
 
 	for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
@@ -369,49 +368,49 @@ bool CustomPrioritySorting(char* data, int height, int width) {
 	int hWidth = width / 2;
 	int hHeight = height / 2;
 
-	for(int y = hHeight - trueY; y < hHeight + trueY; y++) {
-		for(int x = hWidth - trueX; x < hWidth + trueX; x++) {
+	for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
+		for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
 			int base = (x + y * desc.Width) * 4;
 			unsigned short red = data[base + 2] & 255;
 			unsigned short green = data[base + 1] & 255;
 			unsigned short blue = data[base] & 255;
-			if(IsPurpleColor(red, green, blue)) {
+			if (IsPurpleColor(red, green, blue)) {
 				vects.push_back(Vector2(x - hWidth, y - hHeight));
 			}
 		}
 	}
 
-	if(vects.size() > 0) {
+	if (vects.size() > 0) {
 		vects.sort([](const Vector2& lhs, const Vector2& rhs) // SORT BY BIGGEST Y
 			{
 				return  lhs.y < rhs.y;
 			});
 		list<Vector2> forbidden;
-		for(auto& current : vects) // access by reference to avoid copying
+		for (auto& current : vects) // access by reference to avoid copying
 		{
 			bool canUpdate = true;
-			if(abs(current.x) > trueX || abs(current.y) > trueY) {
+			if (abs(current.x) > trueX || abs(current.y) > trueY) {
 				continue;
 			}
-			for(auto& forb : forbidden) // access by reference to avoid copying
+			for (auto& forb : forbidden) // access by reference to avoid copying
 			{
-				if((current + forb).Len() < forSize) {
+				if ((current + forb).Len() < forSize) {
 					canUpdate = false;
 					break;
 				}
-				if(abs(current.x + forb.x) < forSize) {
+				if (abs(current.x + forb.x) < forSize) {
 					canUpdate = false;
 					break;
 				}
 			}
-			if(canUpdate) {
+			if (canUpdate) {
 				forbidden.push_front(current);
-				if(forbidden.size() > maxCount) {
+				if (forbidden.size() > maxCount) {
 					break;
 				}
 			}
 		}
-		if(forbidden.size() > 0) {
+		if (forbidden.size() > 0) {
 			forbidden.sort([](const Vector2& lhs, const Vector2& rhs)
 				{
 					return sqrt(pow(lhs.x, 2) + pow(lhs.y * 10, 2)) < sqrt(pow(rhs.x, 2) + pow(rhs.y * 10, 2));
@@ -446,7 +445,7 @@ bool InitColor() {
 	HRESULT hr(E_FAIL);
 	D3D_FEATURE_LEVEL lFeatureLevel;
 
-	for(UINT DriverTypeIndex = 0; DriverTypeIndex < gNumDriverTypes; ++DriverTypeIndex)
+	for (UINT DriverTypeIndex = 0; DriverTypeIndex < gNumDriverTypes; ++DriverTypeIndex)
 	{
 		hr = D3D11CreateDevice(
 			nullptr,
@@ -460,7 +459,7 @@ bool InitColor() {
 			&lFeatureLevel,
 			&lImmediateContext);
 
-		if(SUCCEEDED(hr))
+		if (SUCCEEDED(hr))
 		{
 			// Device creation success, no need to loop anymore
 			break;
@@ -490,14 +489,14 @@ bool InitColor() {
 
 	hr = lDevice->CreateTexture2D(&desc, NULL, &texture);
 
-	if(FAILED(hr)) {
+	if (FAILED(hr)) {
 		cout << "Failed to create texture" << endl;
 		return false;
 	}
 
 	hr = texture->QueryInterface(__uuidof(IDXGISurface1), (void**)&gdiSurface);
 
-	if(FAILED(hr)) {
+	if (FAILED(hr)) {
 		cout << "Failed to create GDI surface" << endl;
 		return false;
 	}
@@ -521,9 +520,9 @@ bool ScreenGrab() {
 	unsigned short last_g = 0;
 	unsigned short last_b = 0;
 	std::chrono::high_resolution_clock::time_point start;
-	if(isDebugging)
+	if (isDebugging)
 		start = std::chrono::high_resolution_clock::now();
-	
+
 
 	// ==== SCEENGRAB ==== 
 
@@ -533,7 +532,7 @@ bool ScreenGrab() {
 	hdc_target = GetDC(game_window);
 
 	// === THE COPY TEXTURE ===
-	while(!BitBlt(hDC, 0, 0, width, height, hdc_target, 0, 0, SRCCOPY)) {
+	while (!BitBlt(hDC, 0, 0, width, height, hdc_target, 0, 0, SRCCOPY)) {
 		cout << "FAILED" << endl;
 		Sleep(1000);
 	}
@@ -546,7 +545,7 @@ bool ScreenGrab() {
 	D3D11_MAPPED_SUBRESOURCE tempsubsource;
 	ID3D11Texture2D* pFrameCopy = nullptr;
 	HRESULT hr = lDevice->CreateTexture2D(&desc, nullptr, &pFrameCopy);
-	if(FAILED(hr)) {
+	if (FAILED(hr)) {
 		return false;
 	}
 
@@ -556,7 +555,7 @@ bool ScreenGrab() {
 	void* d = tempsubsource.pData;
 	char* data = reinterpret_cast<char*>(d);
 
-	if(FAILED(hr)) {
+	if (FAILED(hr)) {
 		return false;
 	}
 
@@ -567,7 +566,7 @@ bool ScreenGrab() {
 	}
 
 
-	if(pFrameCopy != nullptr) {
+	if (pFrameCopy != nullptr) {
 		lImmediateContext->Unmap(pFrameCopy, 0);
 
 		pFrameCopy->Release();
@@ -600,19 +599,19 @@ bool isRunning = false;
 bool isReallyRunning = false;
 
 void ScreenGrabMain() {
-	while(true) {
+	while (true) {
 		bool shouldRun = false;
-		if(isRunning) {
-			if(isHold) {
+		if (isRunning) {
+			if (isHold) {
 				shouldRun = (GetKeyState(holdKey) & 0x8000);
-				if(invertHold) shouldRun = !shouldRun;
+				if (invertHold) shouldRun = !shouldRun;
 			}
 			else {
 				shouldRun = (GetKeyState(holdKey) == 1);
 			}
 
-			if(shouldRun) {
-				if(testFull360) {
+			if (shouldRun) {
+				if (testFull360) {
 					MoveMouse(full360, 0);
 					Sleep(1000);
 				}
@@ -642,7 +641,7 @@ int sortingCounter = 0;
 const char* currentSortingMethodName;
 const char* currentSortingMethodDescript;
 void UpdateSortingMethod(int id) {
-	switch(id % 2)
+	switch (id % 2)
 	{
 	case 0:
 		currentSortingMethod = CustomPrioritySorting;
@@ -664,12 +663,12 @@ bool ReadConfig() {
 	std::string line;
 	int offsetX = offset[0];
 	int offsetY = offset[1];
-	if(cFile.is_open())
+	if (cFile.is_open())
 	{
-		while(std::getline(cFile, line)) {
+		while (std::getline(cFile, line)) {
 			line.erase(std::remove_if(line.begin(), line.end(), isspace),
 				line.end());
-			if(line[0] == '#' || line.empty()) // COMMETS
+			if (line[0] == '#' || line.empty()) // COMMETS
 				continue;
 			auto delimiterPos = line.find("=");
 			auto name = line.substr(0, delimiterPos);
@@ -721,7 +720,7 @@ void SaveConfig() {
 	WRITE(overloadManualInputs);
 
 	cFile << "#All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes\n";
-	if(holdKeyIndex > 0) {
+	if (holdKeyIndex > 0) {
 		cFile << NAMEOF(holdKey) << "=" << holdKeysCodes[holdKeyIndex] << "\n";
 	}
 	else {
@@ -737,14 +736,14 @@ int main(int, char**)
 {
 	//logging::INFO("Start of application");
 	cout << "Fetching Config..." << endl;
-	if(!ReadConfig()) {
+	if (!ReadConfig()) {
 		cout << "Failed to read config" << endl;
 	}
 	else {
 		cout << "Loaded Config" << endl;
 	}
 
-	if(!InitColor()) {
+	if (!InitColor()) {
 		cin.get();
 		return -1;
 	}
@@ -758,7 +757,7 @@ int main(int, char**)
 
 	WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("ImGui Example"), NULL };
 	::RegisterClassEx(&wc);
-	   
+
 	HWND hwnd = ::CreateWindow(wc.lpszClassName, _T("LABADABA dub dub's"), WS_OVERLAPPEDWINDOW, 0, 0, 400, 500, NULL, NULL, wc.hInstance, NULL);
 
 
@@ -768,7 +767,7 @@ int main(int, char**)
 	SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
 
 	// Initialize Direct3D
-	if(!CreateDeviceD3D(hwnd))
+	if (!CreateDeviceD3D(hwnd))
 	{
 		CleanupDeviceD3D();
 		::UnregisterClass(wc.lpszClassName, wc.hInstance);
@@ -795,9 +794,9 @@ int main(int, char**)
 	ImVec4 clear_color = ImVec4(0.0f, 0.0f, 0.10f, 1.00f);
 
 	holdKeyIndex = -1;
-	for(size_t i = 0; i < hold_arry_size; i++)
+	for (size_t i = 0; i < hold_arry_size; i++)
 	{
-		if(holdKeysCodes[i] == holdKey) {
+		if (holdKeysCodes[i] == holdKey) {
 			holdKeyIndex = i;
 			break;
 		}
@@ -806,9 +805,9 @@ int main(int, char**)
 	// Main loop
 	MSG msg;
 	ZeroMemory(&msg, sizeof(msg));
-	while(msg.message != WM_QUIT)
+	while (msg.message != WM_QUIT)
 	{
-		if(::PeekMessage(&msg, NULL, 0U, 0U, PM_REMOVE))
+		if (::PeekMessage(&msg, NULL, 0U, 0U, PM_REMOVE))
 		{
 			::TranslateMessage(&msg);
 			::DispatchMessage(&msg);
@@ -829,13 +828,13 @@ int main(int, char**)
 
 			ImGui::Text("Setting");
 
-			if(ImGui::Button(testFull360 ? "Stop Full360" : "Start Full360")) {
+			if (ImGui::Button(testFull360 ? "Stop Full360" : "Start Full360")) {
 				testFull360 = !testFull360;
 			}
-			if(testFull360) {
+			if (testFull360) {
 				ImGui::InputInt("Full360", &full360);
 
-				if(holdKeyIndex > 0) {
+				if (holdKeyIndex > 0) {
 					ImGui::Text("Testing Full360, you most scope with vandal\nand configure so it turns 360 degrees\nwhen pressing [%s]", holdKeys[holdKeyIndex]);
 				}
 				else {
@@ -852,11 +851,11 @@ int main(int, char**)
 				ImGui::Text("Flick Aimbot");
 				ImGui::Checkbox("Flick", &flickAim);
 				ImGui::InputInt("Flick Update ms", &flickAimTime);
-				ImGui::Checkbox("Recoil Control" , &recoilControl);
-				ImGui::Checkbox("Overload Manual Inputs" , &overloadManualInputs);
+				ImGui::Checkbox("Recoil Control", &recoilControl);
+				ImGui::Checkbox("Overload Manual Inputs", &overloadManualInputs);
 
 
-				if(flickAimTime < 0) {
+				if (flickAimTime < 0) {
 					flickAimTime = 0;
 				}
 			}
@@ -867,7 +866,7 @@ int main(int, char**)
 				ImGui::Checkbox("Invert Hold", &invertHold);
 			}*/
 
-			if(holdKeyIndex > 0) {
+			if (holdKeyIndex > 0) {
 				ImGui::Combo(isHold ? "Hold key" : "Toggle Key", &holdKeyIndex, holdKeys, hold_arry_size);
 				holdKey = holdKeysCodes[holdKeyIndex];
 			}
@@ -875,10 +874,10 @@ int main(int, char**)
 				ImGui::TextColored(ImVec4(0.4f, 0, 1, 1), "Custom key used: 0x%llX", holdKey);
 			}
 
-			if(!testFull360) {
+			if (!testFull360) {
 				ImGui::Text("Sorting Method");
 
-				if(ImGui::Button(currentSortingMethodName)) {
+				if (ImGui::Button(currentSortingMethodName)) {
 					sortingCounter++;
 					UpdateSortingMethod(sortingCounter);
 				}
@@ -886,23 +885,23 @@ int main(int, char**)
 				ImGui::Text(currentSortingMethodDescript);
 			}
 
-			if(ImGui::Button("Save Config")) {
+			if (ImGui::Button("Save Config")) {
 				SaveConfig();
 			}
 			ImGui::SameLine();
-			if(ImGui::Button(isRunning ? "Stop colorbot" : "Start colorbot")) {
+			if (ImGui::Button(isRunning ? "Stop colorbot" : "Start colorbot")) {
 				isRunning = !isRunning;
 			}
-			if(isRunning && isReallyRunning) {
+			if (isRunning && isReallyRunning) {
 				ImGui::SameLine();
 				ImGui::TextColored(ImVec4(0.4f, 0, 1, 1), "Running");
 			}
-			if(full360 <= 0) {
+			if (full360 <= 0) {
 				ImGui::Text("TO USE THIS COLORBOT \nFULL360 MUST BE CONFIGURED CORRECTLY\nTHIS IS DIFFERENT FOR ALL COMPUTERS\n\nTHE OPTIMAL SPEED I FOUND OUT TO BE AROUND 0.2\nSO IMO, ONLY CHANGE FULL360\n(FULL360 SHOULD BE AROUND 5000-25000)");
 			}
-			ImGui::Checkbox("Debug" , &isDebugging);
+			ImGui::Checkbox("Debug", &isDebugging);
 
-			if(isDebugging)
+			if (isDebugging)
 				ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 
 			ImGui::End();
@@ -915,7 +914,7 @@ int main(int, char**)
 		g_pd3dDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
 		D3DCOLOR clear_col_dx = D3DCOLOR_RGBA((int)(clear_color.x * clear_color.w * 255.0f), (int)(clear_color.y * clear_color.w * 255.0f), (int)(clear_color.z * clear_color.w * 255.0f), (int)(clear_color.w * 255.0f));
 		g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
-		if(g_pd3dDevice->BeginScene() >= 0)
+		if (g_pd3dDevice->BeginScene() >= 0)
 		{
 			ImGui::Render();
 			ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
@@ -924,7 +923,7 @@ int main(int, char**)
 		HRESULT result = g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
 
 		// Handle loss of D3D9 device
-		if(result == D3DERR_DEVICELOST && g_pd3dDevice->TestCooperativeLevel() == D3DERR_DEVICENOTRESET)
+		if (result == D3DERR_DEVICELOST && g_pd3dDevice->TestCooperativeLevel() == D3DERR_DEVICENOTRESET)
 			ResetDevice();
 	}
 
@@ -944,7 +943,7 @@ int main(int, char**)
 
 bool CreateDeviceD3D(HWND hWnd)
 {
-	if((g_pD3D = Direct3DCreate9(D3D_SDK_VERSION)) == NULL)
+	if ((g_pD3D = Direct3DCreate9(D3D_SDK_VERSION)) == NULL)
 		return false;
 
 	// Create the D3DDevice
@@ -956,7 +955,7 @@ bool CreateDeviceD3D(HWND hWnd)
 	g_d3dpp.AutoDepthStencilFormat = D3DFMT_D16;
 	g_d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_ONE;           // Present with vsync
 	//g_d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;   // Present without vsync, maximum unthrottled framerate
-	if(g_pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hWnd, D3DCREATE_HARDWARE_VERTEXPROCESSING, &g_d3dpp, &g_pd3dDevice) < 0)
+	if (g_pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, hWnd, D3DCREATE_HARDWARE_VERTEXPROCESSING, &g_d3dpp, &g_pd3dDevice) < 0)
 		return false;
 
 	return true;
@@ -964,15 +963,15 @@ bool CreateDeviceD3D(HWND hWnd)
 
 void CleanupDeviceD3D()
 {
-	if(g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = NULL; }
-	if(g_pD3D) { g_pD3D->Release(); g_pD3D = NULL; }
+	if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = NULL; }
+	if (g_pD3D) { g_pD3D->Release(); g_pD3D = NULL; }
 }
 
 void ResetDevice()
 {
 	ImGui_ImplDX9_InvalidateDeviceObjects();
 	HRESULT hr = g_pd3dDevice->Reset(&g_d3dpp);
-	if(hr == D3DERR_INVALIDCALL)
+	if (hr == D3DERR_INVALIDCALL)
 		IM_ASSERT(0);
 	ImGui_ImplDX9_CreateDeviceObjects();
 }
@@ -983,13 +982,13 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 // Win32 message handler
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	if(ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
+	if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
 		return true;
 
-	switch(msg)
+	switch (msg)
 	{
 	case WM_SIZE:
-		if(g_pd3dDevice != NULL && wParam != SIZE_MINIMIZED)
+		if (g_pd3dDevice != NULL && wParam != SIZE_MINIMIZED)
 		{
 			g_d3dpp.BackBufferWidth = LOWORD(lParam);
 			g_d3dpp.BackBufferHeight = HIWORD(lParam);
@@ -997,7 +996,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 		return 0;
 	case WM_SYSCOMMAND:
-		if((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
+		if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
 			return 0;
 		break;
 	case WM_DESTROY:
