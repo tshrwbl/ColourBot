@@ -79,6 +79,9 @@ int flickAimTime = 20;
 float speed = 0.2;
 int maxX = 600;
 int maxY = 300;
+//inline float recoilms = 0.2;
+bool recoil = false;
+
 int trueX = 0;
 int trueY = 0;
 
@@ -360,6 +363,31 @@ void GetImageForDebugging(char* data, int height, int width) {
 	}
 }
 
+bool isZoomedFunc() {
+	return GetKeyState(VK_RBUTTON), (VK_LBUTTON);
+}
+
+Vector2 FindXhair(char* data, int height, int width) {
+	int hWidth = width / 2;
+	int hHeight = height / 2;
+	Vector2 center = Vector2(hWidth, hHeight);
+	if (!isZoomedFunc())
+		return center;
+	for (int y = hHeight - maxY; y < hHeight + maxY; y++) {
+		for (int x = hWidth - maxX; x < hWidth + maxX; x++) {
+			int base = (x + y * desc.Width) * 4;
+			unsigned short red = data[base + 2] & 255;
+			unsigned short green = data[base + 1] & 255;
+			unsigned short blue = data[base] & 255;
+			if (red == 0 && blue == 255 && green == 255) { // cyan
+				return Vector2(x, y);
+			}
+		}
+	}
+	return center;
+}
+
+
 bool CustomPrioritySorting(char* data, int height, int width) {
 	const int maxCount = 5;
 	const int forSize = 100;
@@ -367,6 +395,8 @@ bool CustomPrioritySorting(char* data, int height, int width) {
 	list<Vector2> vects;
 	int hWidth = width / 2;
 	int hHeight = height / 2;
+	//Vector2 xhair = FindXhair(data, height, width);
+
 
 	for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
 		for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
@@ -376,6 +406,14 @@ bool CustomPrioritySorting(char* data, int height, int width) {
 			unsigned short blue = data[base] & 255;
 			if (IsPurpleColor(red, green, blue)) {
 				vects.push_back(Vector2(x - hWidth, y - hHeight));
+				/*if (recoil)
+				{
+					vects.push_back(Vector2(x - xhair.x, y - xhair.y));
+				}
+				else
+				{
+					vects.push_back(Vector2(x - hWidth, y - hHeight));
+				}*/
 			}
 		}
 	}
@@ -852,6 +890,8 @@ int main(int, char**)
 				ImGui::Checkbox("Flick", &flickAim);
 				ImGui::InputInt("Flick Update ms", &flickAimTime);
 				ImGui::Checkbox("Recoil Control", &recoilControl);
+				//ImGui::Text("Recol New Method");
+				ImGui::Checkbox("Recoil New Method", &recoil);
 				ImGui::Checkbox("Overload Manual Inputs", &overloadManualInputs);
 
 
