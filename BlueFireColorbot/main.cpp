@@ -345,12 +345,18 @@ void GetImageForDebugging(char* data, int height, int width) {
 	int hWidth = width / 2;
 	int hHeight = height / 2;
 	//save ofstream file in debug folder
-	ofstream img("Test/debugpic" + std::to_string(counter++) + ".ppm"); //#include <fstream>
+	ofstream img("Test/debugpic" + std::to_string(counter) + ".ppm"); //#include <fstream>
+	ofstream img2("Test/debugpicDetectionVectors" + std::to_string(counter++) + ".ppm"); //#include <fstream>
 
 	img << "P3" << endl;
 	img << trueX * 2 << endl;
 	img << trueY * 2 << endl;
 	img << "255" << endl;
+
+	img2 << "P3" << endl;
+	img2 << trueX * 2 << endl;
+	img2 << trueY * 2 << endl;
+	img2 << "255" << endl;
 
 	for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
 		for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
@@ -359,8 +365,14 @@ void GetImageForDebugging(char* data, int height, int width) {
 			unsigned short green = data[base + 1] & 255;
 			unsigned short blue = data[base] & 255;
 			img << red << " " << green << " " << blue << "\n";
+			if (IsPurpleColor(red, green, blue))
+				img2 << red << " " << green << " " << blue << "\n";
+			else
+				img2 << 0 << " " << 0 << " " << 0 << "\n";
 		}
 	}
+
+	cout << counter << " Images saved" << endl;
 }
 
 bool isZoomedFunc() {
@@ -451,7 +463,8 @@ bool CustomPrioritySorting(char* data, int height, int width) {
 		if (forbidden.size() > 0) {
 			forbidden.sort([](const Vector2& lhs, const Vector2& rhs)
 				{
-					return sqrt(pow(lhs.x, 2) + pow(lhs.y * 10, 2)) < sqrt(pow(rhs.x, 2) + pow(rhs.y * 10, 2));
+					//return sqrt(pow(lhs.x, 2) + pow(lhs.y * 10, 2)) < sqrt(pow(rhs.x, 2) + pow(rhs.y * 10, 2));
+					return (pow(lhs.x, 2) + pow(lhs.y, 2)) < (pow(rhs.x, 2) + pow(rhs.y, 2));
 				});
 			Vector2 front = forbidden.front();
 			MoveMouseFromScreenPosition(front, height, width);
@@ -628,7 +641,7 @@ bool ScreenGrab() {
 			last_g = green;
 			last_r = red;
 		}
-		//GetImageForDebugging(data, desc.Height, desc.Width);
+		GetImageForDebugging(data, desc.Height, desc.Width);
 	}
 	return true;
 }
