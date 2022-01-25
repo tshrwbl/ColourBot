@@ -341,7 +341,7 @@ bool FirstColorSorting(char* data, int height, int width) {
 
 int counter = 0;
 void GetImageForDebugging(char* data, int height, int width) {
-
+	return;
 	int hWidth = width / 2;
 	int hHeight = height / 2;
 	//save ofstream file in debug folder
@@ -907,6 +907,27 @@ int main(int, char**)
 				ImGui::Checkbox("Recoil New Method", &recoil);
 				ImGui::Checkbox("Overload Manual Inputs", &overloadManualInputs);
 
+				if (isRunning)
+				{
+					if (GetKeyState(VK_MENU) == 1)
+					{
+						if (!flickAim)
+							Beep(523, 200);
+
+						flickAim = true;
+					}
+					else
+					{
+						if (flickAim)
+						{
+							Beep(223, 100);
+							Beep(223, 100);
+						}
+						flickAim = false;
+					}
+				}
+
+				Sleep(20);
 
 				if (flickAimTime < 0) {
 					flickAimTime = 0;
