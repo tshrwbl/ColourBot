@@ -24,8 +24,8 @@
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
 
-#define PROCESS_NAME L"VALORANT  " 
-//#define PROCESS_NAME L"Untitled - Paint" 
+//#define PROCESS_NAME L"VALORANT  " 
+#define PROCESS_NAME L"Untitled - Paint" 
 
 #define NAMEOF(name) #name
 #define DEBUGDIR L"Test"
@@ -94,6 +94,7 @@ int holdKey = VK_MENU;
 bool isHold = false;
 bool invertHold = false;
 bool testFull360 = false;
+bool modeSwitchingEnable = false;
 int offset[2] = {
 	0,5
 };
@@ -874,7 +875,7 @@ int main(int, char**)
 		{
 
 			ImGui::SetNextWindowPos(ImVec2(0, 0));
-			ImGui::SetNextWindowSize(ImVec2(400, 500), 0);
+			ImGui::SetNextWindowSize(ImVec2(400, 530), 0);
 			ImGui::Begin("Settings", 0, flags);
 
 			ImGui::Text("Setting");
@@ -893,8 +894,8 @@ int main(int, char**)
 				}
 			}
 			else {
-				//ImGui::SliderFloat("Speed", &speed, 0.0f, 1.0f);
-				ImGui::InputFloat("Speed", &speed, 0.0f, 1.0f);
+				ImGui::SliderFloat("Speed", &speed, 0.0f, 1.0f);
+				//ImGui::InputFloat("Speed", &speed, 0.0f, 1.0f);
 				ImGui::SliderInt("FovX", &maxX, 50, width / 2);
 				ImGui::SliderInt("FovY", &maxY, 50, height / 2);
 				ImGui::InputInt2("Offset XY", offset);
@@ -906,14 +907,14 @@ int main(int, char**)
 				//ImGui::Text("Recol New Method");
 				ImGui::Checkbox("Recoil New Method", &recoil);
 				ImGui::Checkbox("Overload Manual Inputs", &overloadManualInputs);
+				ImGui::Checkbox("Mode Switch", &modeSwitchingEnable);
 
-				if (isRunning)
+				if (isRunning && modeSwitchingEnable)
 				{
 					if (GetKeyState(VK_MENU) == 1)
 					{
 						if (!flickAim)
 							Beep(523, 200);
-
 						flickAim = true;
 					}
 					else
@@ -925,9 +926,8 @@ int main(int, char**)
 						}
 						flickAim = false;
 					}
+					Sleep(20);
 				}
-
-				Sleep(20);
 
 				if (flickAimTime < 0) {
 					flickAimTime = 0;
