@@ -24,8 +24,8 @@
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
 
-//#define PROCESS_NAME L"VALORANT  " 
-#define PROCESS_NAME L"Untitled - Paint" 
+#define PROCESS_NAME L"VALORANT  " 
+//#define PROCESS_NAME L"Untitled - Paint" 
 
 #define NAMEOF(name) #name
 #define DEBUGDIR L"Test"
@@ -75,7 +75,9 @@ bool flickAim = false;
 bool recoilControl = false;
 bool overloadManualInputs = false;
 bool isDebugging = false;
+bool NotfirstRunSingleTarget = false;
 int flickAimTime = 20;
+int checkingRangeSingleTarget = 20;
 float speed = 0.2;
 int maxX = 600;
 int maxY = 300;
@@ -400,6 +402,126 @@ Vector2 FindXhair(char* data, int height, int width) {
 	return center;
 }
 
+Vector2 SaveLastLocation = Vector2(0, 0);
+
+bool SingleTargetPrioritySorting(char* data, int height, int width) {
+	const int maxCount = 5;
+	const int forSize = 100;
+
+	list<Vector2> vects;
+	int hWidth = width / 2;
+	int hHeight = height / 2;
+	//Vector2 xhair = FindXhair(data, height, width);
+
+
+	try
+	{
+		if (!NotfirstRunSingleTarget)
+		{
+			for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
+				for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
+					int base = (x + y * desc.Width) * 4;
+					unsigned short red = data[base + 2] & 255;
+					unsigned short green = data[base + 1] & 255;
+					unsigned short blue = data[base] & 255;
+					if (IsPurpleColor(red, green, blue)) {
+						vects.push_back(Vector2(x - hWidth, y - hHeight));
+						/*if (recoil)
+						{
+							vects.push_back(Vector2(x - xhair.x, y - xhair.y));
+						}
+						else
+						{
+							vects.push_back(Vector2(x - hWidth, y - hHeight));
+						}*/
+					}
+				}
+			}
+		}
+		else
+		{
+			int lastX = SaveLastLocation.x * (1 - speed) + hWidth;
+			int lastY = SaveLastLocation.y * (1 - speed) + hHeight;
+
+			for (int y = lastY - checkingRangeSingleTarget; y < lastX + checkingRangeSingleTarget; y++) {
+				if (y >= hHeight || y < 1)
+					break;
+				for (int x = lastX - checkingRangeSingleTarget; x < lastX + checkingRangeSingleTarget; x++) {
+					if (x >= hWidth || x < 1)
+						break;
+					int base = (x + y * desc.Width) * 4;
+					unsigned short red = data[base + 2] & 255;
+					unsigned short green = data[base + 1] & 255;
+					unsigned short blue = data[base] & 255;
+					if (IsPurpleColor(red, green, blue)) {
+						vects.push_back(Vector2(x - hWidth, y - hHeight));
+						/*if (recoil)
+						{
+							vects.push_back(Vector2(x - xhair.x, y - xhair.y));
+						}
+						else
+						{
+							vects.push_back(Vector2(x - hWidth, y - hHeight));
+						}*/
+					}
+				}
+			}
+		}
+
+	}
+	catch (const std::exception&)
+	{
+		cout << "Exception occured on target priority checks " << endl;
+		NotfirstRunSingleTarget = false;
+		return false;
+	}
+
+	if (vects.size() > 0) {
+		vects.sort([](const Vector2& lhs, const Vector2& rhs) // SORT BY BIGGEST Y
+			{
+				return  lhs.y < rhs.y;
+			});
+		list<Vector2> forbidden;
+		for (auto& current : vects) // access by reference to avoid copying
+		{
+			bool canUpdate = true;
+			if (abs(current.x) > trueX || abs(current.y) > trueY) {
+				continue;
+			}
+			for (auto& forb : forbidden) // access by reference to avoid copying
+			{
+				if ((current + forb).Len() < forSize) {
+					canUpdate = false;
+					break;
+				}
+				if (abs(current.x + forb.x) < forSize) {
+					canUpdate = false;
+					break;
+				}
+			}
+			if (canUpdate) {
+				forbidden.push_front(current);
+				if (forbidden.size() > maxCount) {
+					break;
+				}
+			}
+		}
+		if (forbidden.size() > 0) {
+			forbidden.sort([](const Vector2& lhs, const Vector2& rhs)
+				{
+					//return sqrt(pow(lhs.x, 2) + pow(lhs.y * 10, 2)) < sqrt(pow(rhs.x, 2) + pow(rhs.y * 10, 2));
+					return (pow(lhs.x, 2) + pow(lhs.y, 2)) < (pow(rhs.x, 2) + pow(rhs.y, 2));
+				});
+			SaveLastLocation = forbidden.front();
+			MoveMouseFromScreenPosition(SaveLastLocation, height, width);
+			NotfirstRunSingleTarget = true;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 
 bool CustomPrioritySorting(char* data, int height, int width) {
 	const int maxCount = 5;
@@ -579,7 +701,6 @@ bool ScreenGrab() {
 	// ==== SCEENGRAB ==== 
 
 	HDC hDC = nullptr;
-
 	gdiSurface->GetDC(true, &hDC);
 	hdc_target = GetDC(game_window);
 
@@ -680,6 +801,7 @@ void ScreenGrabMain() {
 				//}
 				/*if (isDebugging)
 					system("cls");*/
+				NotfirstRunSingleTarget = false;
 			}
 		}
 		else {
@@ -693,7 +815,7 @@ int sortingCounter = 0;
 const char* currentSortingMethodName;
 const char* currentSortingMethodDescript;
 void UpdateSortingMethod(int id) {
-	switch (id % 2)
+	switch (id % 3)
 	{
 	case 0:
 		currentSortingMethod = CustomPrioritySorting;
@@ -704,6 +826,11 @@ void UpdateSortingMethod(int id) {
 		currentSortingMethod = FirstColorSorting;
 		currentSortingMethodName = "First Color Sorter";
 		currentSortingMethodDescript = "Fast, but no sorting";
+		break;
+	case 2:
+		currentSortingMethod = SingleTargetPrioritySorting;
+		currentSortingMethodName = "Target Priority Sorter";
+		currentSortingMethodDescript = "Locks on one";
 		break;
 	default:
 		break;
@@ -875,7 +1002,7 @@ int main(int, char**)
 		{
 
 			ImGui::SetNextWindowPos(ImVec2(0, 0));
-			ImGui::SetNextWindowSize(ImVec2(400, 530), 0);
+			ImGui::SetNextWindowSize(ImVec2(400, 580), 0);
 			ImGui::Begin("Settings", 0, flags);
 
 			ImGui::Text("Setting");
@@ -903,6 +1030,7 @@ int main(int, char**)
 				ImGui::Text("Flick Aimbot");
 				ImGui::Checkbox("Flick", &flickAim);
 				ImGui::InputInt("Flick Update ms", &flickAimTime);
+				ImGui::InputInt("Range to update", &checkingRangeSingleTarget);
 				ImGui::Checkbox("Recoil Control", &recoilControl);
 				//ImGui::Text("Recol New Method");
 				ImGui::Checkbox("Recoil New Method", &recoil);
