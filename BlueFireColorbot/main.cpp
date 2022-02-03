@@ -24,8 +24,8 @@
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
 
-//#define PROCESS_NAME L"VALORANT  " 
-#define PROCESS_NAME L"Untitled - Paint" 
+#define PROCESS_NAME L"VALORANT  " 
+//#define PROCESS_NAME L"Untitled - Paint" 
 
 #define NAMEOF(name) #name
 #define DEBUGDIR L"Test"
