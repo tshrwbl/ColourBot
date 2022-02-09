@@ -221,8 +221,6 @@ void InitMoveMouse() {
 	thread normal(NormalMouse);
 	normal.detach();
 }
-
-
 void SendInputs()
 {
 	InterceptionMouseStroke mstroke;
@@ -364,9 +362,6 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 			MoveMouse(moveX * speed, moveY * speed);
 	}
 }
-
-//function to write local variables into xml file
-
 
 bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue) {
 	// updated PURPLE FROM https://www.unknowncheats.me/forum/valorant/437368-updated-colors-pixel-bot-act-4-a.html
@@ -683,71 +678,70 @@ bool InitColor() {
 
 	// ==== CREATE DEVICE ==== 
 
-	//HRESULT hr(E_FAIL);
-	//D3D_FEATURE_LEVEL lFeatureLevel;
+	HRESULT hr(E_FAIL);
+	D3D_FEATURE_LEVEL lFeatureLevel;
 
-	//for (UINT DriverTypeIndex = 0; DriverTypeIndex < gNumDriverTypes; ++DriverTypeIndex)
-	//{
-	//	hr = D3D11CreateDevice(
-	//		nullptr,
-	//		gDriverTypes[DriverTypeIndex],
-	//		nullptr,
-	//		0,
-	//		gFeatureLevels,
-	//		gNumFeatureLevels,
-	//		D3D11_SDK_VERSION,
-	//		&lDevice,
-	//		&lFeatureLevel,
-	//		&lImmediateContext);
+	for (UINT DriverTypeIndex = 0; DriverTypeIndex < gNumDriverTypes; ++DriverTypeIndex)
+	{
+		hr = D3D11CreateDevice(
+			nullptr,
+			gDriverTypes[DriverTypeIndex],
+			nullptr,
+			0,
+			gFeatureLevels,
+			gNumFeatureLevels,
+			D3D11_SDK_VERSION,
+			&lDevice,
+			&lFeatureLevel,
+			&lImmediateContext);
 
-	//	if (SUCCEEDED(hr))
-	//	{
-	//		// Device creation success, no need to loop anymore
-	//		break;
-	//	}
+		if (SUCCEEDED(hr))
+		{
+			// Device creation success, no need to loop anymore
+			break;
+		}
 
-	//	lDevice.Reset();
+		lDevice.Reset();
 
-	//	lImmediateContext.Reset();
-	//}
+		lImmediateContext.Reset();
+	}
 
-	//// ==== CREATE TEXTURE ====
+	// ==== CREATE TEXTURE ====
 
-	//desc.Width = width;
-	//desc.Height = height;
-	//desc.ArraySize = 1;
-	//desc.MipLevels = 1;
+	desc.Width = width;
+	desc.Height = height;
+	desc.ArraySize = 1;
+	desc.MipLevels = 1;
 
-	//desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-	//desc.SampleDesc.Count = 1;
-	//desc.SampleDesc.Quality = 0;
+	desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+	desc.SampleDesc.Count = 1;
+	desc.SampleDesc.Quality = 0;
 
-	//desc.Usage = D3D11_USAGE_DEFAULT;
+	desc.Usage = D3D11_USAGE_DEFAULT;
 
-	//desc.BindFlags = 40;
-	//desc.MiscFlags = D3D11_RESOURCE_MISC_GDI_COMPATIBLE;
-	//desc.CPUAccessFlags = 0;
+	desc.BindFlags = 40;
+	desc.MiscFlags = D3D11_RESOURCE_MISC_GDI_COMPATIBLE;
+	desc.CPUAccessFlags = 0;
 
-	//hr = lDevice->CreateTexture2D(&desc, NULL, &texture);
+	hr = lDevice->CreateTexture2D(&desc, NULL, &texture);
 
-	//if (FAILED(hr)) {
-	//	cout << "Failed to create texture" << endl;
-	//	return false;
-	//}
+	if (FAILED(hr)) {
+		cout << "Failed to create texture" << endl;
+		return false;
+	}
 
-	//hr = texture->QueryInterface(__uuidof(IDXGISurface1), (void**)&gdiSurface);
+	hr = texture->QueryInterface(__uuidof(IDXGISurface1), (void**)&gdiSurface);
 
-	//if (FAILED(hr)) {
-	//	cout << "Failed to create GDI surface" << endl;
-	//	return false;
-	//}
+	if (FAILED(hr)) {
+		cout << "Failed to create GDI surface" << endl;
+		return false;
+	}
 
-	//// REUSE desc FOR FRAMECOPY
-	//desc.BindFlags = 0;
-	//desc.MiscFlags &= D3D11_RESOURCE_MISC_TEXTURECUBE;
-	//desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-	//desc.Usage = D3D11_USAGE_STAGING;
-
+	// REUSE desc FOR FRAMECOPY
+	desc.BindFlags = 0;
+	desc.MiscFlags &= D3D11_RESOURCE_MISC_TEXTURECUBE;
+	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	desc.Usage = D3D11_USAGE_STAGING;
 	InitMoveMouse();
 	cout << "Starting at " << width << "x" << height << endl;
 
@@ -1007,29 +1001,6 @@ void SaveConfig(int index) {
 	cout << "Saved config : " << fileName << endl;
 }
 
-void CheckForConfigFiles()
-{
-	//get all txt files in config directory
-	WIN32_FIND_DATA FindFileData;
-	HANDLE hFind;
-	hFind = FindFirstFile(L"Configs\\*.txt", &FindFileData);
-	if (hFind != INVALID_HANDLE_VALUE)
-	{
-		do
-		{
-			//add file to list
-			//convert wchar to string
-			/*string fileName =  FindFileData.cFileName;
-			if (fileName.find("config_") != string::npos)
-			{
-				string profileName = fileName.substr(7, fileName.length() - 8);
-				profiles.push_back(profileName);
-			}*/
-		} while (FindNextFile(hFind, &FindFileData));
-		FindClose(hFind);
-	}
-}
-
 // Main code
 int main(int, char**)
 {
@@ -1056,7 +1027,7 @@ int main(int, char**)
 	//height = 1920;
 
 	//InitMoveMouse();
-	//cout << "Starting at " << width << "x" << height << endl;
+	cout << "Starting at " << width << "x" << height << endl;
 
 	ScreenGrabModifiedInitialize();
 
