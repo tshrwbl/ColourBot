@@ -77,10 +77,15 @@ bool overloadManualInputs = false;
 bool isDebugging = false;
 bool NotfirstRunSingleTarget = false;
 int flickAimTime = 20;
+int snapValue = 5;
 int checkingRangeSingleTarget = 20;
 float speed = 0.2;
 int maxX = 600;
 int maxY = 300;
+bool lmbTrigger = false;
+bool trigger = true;
+int triggerFov = 10;
+int trgUpdateSpeed = 20;
 //inline float recoilms = 0.2;
 bool recoil = false;
 
@@ -142,6 +147,10 @@ static const int holdKeysCodes[hold_arry_size]{
    VK_RCONTROL,
 };
 
+void GetImageForDebuggingNew(BYTE* data, int h, int w);
+void ScreenGrabModifiedInitialize();
+void ScreenGrabModified();
+
 // Data
 static LPDIRECT3D9              g_pD3D = NULL;
 static LPDIRECT3DDEVICE9        g_pd3dDevice = NULL;
@@ -192,6 +201,29 @@ void InitMoveMouse() {
 	thread normal(NormalMouse);
 	normal.detach();
 }
+void SendInputs()
+{
+	InterceptionMouseStroke mstroke;
+
+	mstroke.flags = INTERCEPTION_MOUSE_MOVE_ABSOLUTE;
+	//mstroke.flags = 0;
+	mstroke.information = 0;
+	mstroke.x = 0;
+	mstroke.y = 0;
+
+	mstroke.state = INTERCEPTION_MOUSE_LEFT_BUTTON_DOWN;
+	interception_send(context, device, (InterceptionStroke*)&mstroke, 1);
+
+	Sleep(trgUpdateSpeed);
+
+	mstroke.state = INTERCEPTION_MOUSE_LEFT_BUTTON_UP;
+	interception_send(context, device, (InterceptionStroke*)&mstroke, 1);
+
+	mstroke.state = 0;
+	//mstroke.x = static_cast<int>((0xFFFF * center.x) / screen_width);
+	//mstroke.y = static_cast<int>((0xFFFF * center.y) / screen_height);
+	interception_send(context, device, (InterceptionStroke*)&mstroke, 1);
+}
 
 void MoveMouse(int dx, int dy) {
 	InterceptionMouseStroke& mstroke = *(InterceptionMouseStroke*)&stroke;
@@ -199,10 +231,16 @@ void MoveMouse(int dx, int dy) {
 	mstroke.information = 0;
 	mstroke.x = dx + offset[0];
 	mstroke.y = dy + offset[1] + recoilOffset;
+
 	if (isDebugging)
 		//logging::INFO("Cords: " + dx + ',' + dy);
 		cout << "Cords: x-" << dx << "y-" << dy << endl;
 	interception_send(context, device, &stroke, 1);
+
+	if (trigger && (abs(dx) < triggerFov && abs(dy) < triggerFov))
+	{
+		SendInputs();
+	}
 }
 
 typedef bool(*ColorSortingMethod)(char*, int, int);
@@ -297,7 +335,11 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 		trueY = onTargetLockY;
 	}
 	else {
-		MoveMouse(moveX * speed, moveY * speed);
+
+		if (abs(moveX) < snapValue && abs(moveY) < snapValue)
+			MoveMouse(moveX, moveY);
+		else
+			MoveMouse(moveX * speed, moveY * speed);
 	}
 }
 
@@ -783,25 +825,37 @@ void ScreenGrabMain() {
 				shouldRun = (GetKeyState(holdKey) == 1);
 			}
 
+
 			if (shouldRun) {
+				lmbTrigger = false;
+				//isReallyRunning = shouldRun;
 				if (testFull360) {
 					MoveMouse(full360, 0);
 					Sleep(1000);
 				}
 				else {
-					ScreenGrab();
+					//ScreenGrab();
+					ScreenGrabModified();
 				}
 			}
 			else {
-				Sleep(10);
-				//if (flickAim)
-				//{
-				trueX = maxX;
-				trueY = maxY;
-				//}
-				/*if (isDebugging)
-					system("cls");*/
-				NotfirstRunSingleTarget = false;
+				//lmbTrigger = (GetKeyState(VK_RBUTTON) & 0x8000);
+				if (lmbTrigger)
+				{
+					ScreenGrabModified();
+				}
+				else
+				{
+					Sleep(10);
+					//if (flickAim)
+					//{
+					trueX = maxX;
+					trueY = maxY;
+					//}
+					/*if (isDebugging)
+						system("cls");*/
+					NotfirstRunSingleTarget = false;
+				}
 			}
 		}
 		else {
@@ -926,6 +980,14 @@ int main(int, char**)
 		cin.get();
 		return -1;
 	}
+	//width = 1080;
+	//height = 1920;
+
+	//InitMoveMouse();
+	cout << "Starting at " << width << "x" << height << endl;
+
+	ScreenGrabModifiedInitialize();
+
 	thread t1(ScreenGrabMain);
 	t1.detach();
 
@@ -937,7 +999,7 @@ int main(int, char**)
 	WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("ImGui Example"), NULL };
 	::RegisterClassEx(&wc);
 
-	HWND hwnd = ::CreateWindow(wc.lpszClassName, _T("LABADABA dub dub's"), WS_OVERLAPPEDWINDOW, 0, 0, 400, 500, NULL, NULL, wc.hInstance, NULL);
+	HWND hwnd = ::CreateWindow(wc.lpszClassName, _T("LABADABA dub dub's"), WS_OVERLAPPEDWINDOW, 0, 0, 400, 600, NULL, NULL, wc.hInstance, NULL);
 
 
 	HICON hIcon = LoadIcon(wc.hInstance, MAKEINTRESOURCE(MAINICON));
@@ -1030,12 +1092,19 @@ int main(int, char**)
 				ImGui::Text("Flick Aimbot");
 				ImGui::Checkbox("Flick", &flickAim);
 				ImGui::InputInt("Flick Update ms", &flickAimTime);
-				ImGui::InputInt("Range to update", &checkingRangeSingleTarget);
+				//ImGui::InputInt("Range to update", &checkingRangeSingleTarget);
+				ImGui::InputInt("Snap value", &snapValue);
 				ImGui::Checkbox("Recoil Control", &recoilControl);
 				//ImGui::Text("Recol New Method");
-				ImGui::Checkbox("Recoil New Method", &recoil);
+				//ImGui::Checkbox("Recoil New Method", &recoil);
 				ImGui::Checkbox("Overload Manual Inputs", &overloadManualInputs);
 				ImGui::Checkbox("Mode Switch", &modeSwitchingEnable);
+				ImGui::Checkbox("Trigger control", &trigger);
+				if (trigger)
+				{
+					ImGui::InputInt("Trigger Fov", &triggerFov);
+					ImGui::InputInt("Update speed", &trgUpdateSpeed);
+				}
 
 				if (isRunning && modeSwitchingEnable)
 				{
@@ -1207,3 +1276,257 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	}
 	return ::DefWindowProc(hWnd, msg, wParam, lParam);
 }
+
+
+BYTE* screenData = 0;
+BITMAPINFOHEADER bmi;
+HDC hScreen;
+HBITMAP hBitmap;
+HDC hDC;
+
+
+void ScreenGrabModifiedInitialize() {
+	int w = maxX * 2;
+	int h = maxY * 2;
+	hScreen = GetDC(NULL);
+	hBitmap = CreateCompatibleBitmap(hScreen, w, h);
+	screenData = (BYTE*)malloc(5 * width * height);
+	hDC = CreateCompatibleDC(hScreen);
+	//point middle_screen(width / 2, height / 2);
+
+	bmi = { 0 };
+	bmi.biSize = sizeof(BITMAPINFOHEADER);
+	bmi.biPlanes = 1;
+	bmi.biBitCount = 32;
+	bmi.biWidth = w;
+	bmi.biHeight = -h;
+	bmi.biCompression = BI_RGB;
+	bmi.biSizeImage = 0;
+}
+
+
+void CheckForTrg(BYTE* data, int h, int w) {
+
+	for (int j = 0; j < h; ++j) {
+		for (int i = 0; i < w * 4; i += 4) {
+			unsigned short red = data[i + (j * w * 4) + 2];
+			unsigned short green = data[i + (j * w * 4) + 1];
+			unsigned short blue = data[i + (j * w * 4) + 0];
+
+			if (IsPurpleColor(red, green, blue)) {
+				SendInputs();
+				return;
+			}
+		}
+	}
+
+	if (isDebugging)
+	{
+		GetImageForDebuggingNew(screenData, h, w);
+	}
+	
+}
+
+bool NewSortingMethod(BYTE* data, int h, int w) {
+	const int maxCount = 5;
+	const int forSize = 100;
+
+	list<Vector2> vects;
+	int hWidth = width / 2;
+	int hHeight = height / 2;
+	//Vector2 xhair = FindXhair(data, height, width);
+
+
+	for (int j = 0; j < h; ++j) {
+		for (int i = 0; i < w * 4; i += 4) {
+			unsigned short red = data[i + (j * w * 4) + 2];
+			unsigned short green = data[i + (j * w * 4) + 1];
+			unsigned short blue = data[i + (j * w * 4) + 0];
+
+			if (IsPurpleColor(red, green, blue)) {
+				vects.push_back(Vector2((i / 4) - (w / 2), j - (h / 2)));
+			}
+		}
+	}
+
+	//for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
+	//	for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
+	//		int base = (x + y * desc.Width) * 4;
+	//		unsigned short red = data[base + 2] & 255;
+	//		unsigned short green = data[base + 1] & 255;
+	//		unsigned short blue = data[base] & 255;
+	//		if (IsPurpleColor(red, green, blue)) {
+	//			vects.push_back(Vector2(x - hWidth, y - hHeight));
+	//			/*if (recoil)
+	//			{
+	//				vects.push_back(Vector2(x - xhair.x, y - xhair.y));
+	//			}
+	//			else
+	//			{
+	//				vects.push_back(Vector2(x - hWidth, y - hHeight));
+	//			}*/
+	//		}
+	//	}
+	//}
+
+	if (vects.size() > 0) {
+		vects.sort([](const Vector2& lhs, const Vector2& rhs) // SORT BY BIGGEST Y
+			{
+				return  lhs.y < rhs.y;
+			});
+		list<Vector2> forbidden;
+		for (auto& current : vects) // access by reference to avoid copying
+		{
+			bool canUpdate = true;
+			if (abs(current.x) > trueX || abs(current.y) > trueY) {
+				continue;
+			}
+			for (auto& forb : forbidden) // access by reference to avoid copying
+			{
+				if ((current + forb).Len() < forSize) {
+					canUpdate = false;
+					break;
+				}
+				if (abs(current.x + forb.x) < forSize) {
+					canUpdate = false;
+					break;
+				}
+			}
+			if (canUpdate) {
+				forbidden.push_front(current);
+				if (forbidden.size() > maxCount) {
+					break;
+				}
+			}
+		}
+		if (forbidden.size() > 0) {
+			forbidden.sort([](const Vector2& lhs, const Vector2& rhs)
+				{
+					//return sqrt(pow(lhs.x, 2) + pow(lhs.y * 10, 2)) < sqrt(pow(rhs.x, 2) + pow(rhs.y * 10, 2));
+					return (pow(lhs.x, 2) + pow(lhs.y, 2)) < (pow(rhs.x, 2) + pow(rhs.y, 2));
+				});
+			Vector2 front = forbidden.front();
+			MoveMouseFromScreenPosition(front, height, width);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+
+
+bool CheckForTrigger(BYTE* data) {
+
+	//Vector2 xhair = FindXhair(data, height, width);
+
+	for (int j = 0; j < triggerFov; ++j) {
+		for (int i = 0; i < 5 * triggerFov; i += 4) {
+			unsigned short red = data[i + (j * triggerFov * 4) + 2];
+			unsigned short green = data[i + (j * triggerFov * 4) + 1];
+			unsigned short blue = data[i + (j * triggerFov * 4) + 0];
+
+			if (IsPurpleColor(red, green, blue)) {
+				//vects.push_back(Vector2((i / 4) - (triggerFov / 2), j - (triggerFov / 2)));
+				SendInputs();
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+void ScreenGrabModified() {
+
+	//auto t_start = std::chrono::high_resolution_clock::now();
+	//auto t_end = std::chrono::high_resolution_clock::now();
+
+	//while (run_threads) {
+	//Sleep(6);
+
+	int w = maxX * 2;
+	int h = maxY * 2;
+
+	Vector2 middle_screen(width / 2, height / 2);
+	HGDIOBJ old_obj = SelectObject(hDC, hBitmap);
+	BOOL bRet = BitBlt(hDC, 0, 0, trueX * 2, trueY * 2, hScreen, middle_screen.x - (w / 2), middle_screen.y - (h / 2), SRCCOPY);
+	SelectObject(hDC, old_obj);
+	GetDIBits(hDC, hBitmap, 0, h, screenData, (BITMAPINFO*)&bmi, DIB_RGB_COLORS);
+
+
+	if (lmbTrigger)
+	{
+		CheckForTrg(screenData, h, w);
+	}
+	else if (!NewSortingMethod(screenData, h, w) && flickAim)
+	{
+		trueX = maxX;
+		trueY = maxY;
+	}
+
+	/*if (trigger)
+	{
+		CheckForTrigger(screenData);
+	}*/
+
+	if (isDebugging)
+	{
+		GetImageForDebuggingNew(screenData, h, w);
+	}
+	//}
+}
+
+
+int counterNew = 0;
+void GetImageForDebuggingNew(BYTE* data, int h, int w) {
+	//return;
+	int hWidth = width / 2;
+	int hHeight = height / 2;
+	//save ofstream file in debug folder
+	ofstream img("Test/debugpic" + std::to_string(counterNew) + ".ppm"); //#include <fstream>
+	ofstream img2("Test/debugpicDetectionVectors" + std::to_string(counterNew++) + ".ppm"); //#include <fstream>
+
+	img << "P3" << endl;
+	img << w  << endl;
+	img << h  << endl;
+	img << "255" << endl;
+
+	img2 << "P3" << endl;
+	img2 << w  << endl;
+	img2 << h  << endl;
+	img2 << "255" << endl;
+
+
+	for (int j = 0; j < h; ++j) {
+		for (int i = 0; i < w * 4; i += 4) {
+			unsigned short red = data[i + (j * w * 4) + 2];
+			unsigned short green = data[i + (j * w * 4) + 1];
+			unsigned short blue = data[i + (j * w * 4) + 0];
+			img << red << " " << green << " " << blue << "\n";
+			if (IsPurpleColor(red, green, blue))
+				img2 << red << " " << green << " " << blue << "\n";
+			else
+				img2 << 0 << " " << 0 << " " << 0 << "\n";
+
+		}
+	}
+
+
+	//for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
+	//	for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
+	//		int base = (x + y * desc.Width) * 4;
+	//		unsigned short red = data[base + 2] & 255;
+	//		unsigned short green = data[base + 1] & 255;
+	//		unsigned short blue = data[base] & 255;
+	//		img << red << " " << green << " " << blue << "\n";
+	//		if (IsPurpleColor(red, green, blue))
+	//			img2 << red << " " << green << " " << blue << "\n";
+	//		else
+	//			img2 << 0 << " " << 0 << " " << 0 << "\n";
+	//	}
+	//}
+
+	cout << counterNew << " Images saved" << endl;
+}
+
+
