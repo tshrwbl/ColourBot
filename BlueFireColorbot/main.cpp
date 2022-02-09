@@ -29,6 +29,7 @@ using namespace std;
 
 #define NAMEOF(name) #name
 #define DEBUGDIR L"Test"
+#define CONFIGDIR L"Configs"
 
 using Microsoft::WRL::ComPtr;
 
@@ -97,6 +98,7 @@ int onTargetLockY = 50;
 
 int full360 = 0;//6429;	
 int holdKeyIndex = 0;
+int ProfileIndex = 0;
 int holdKey = VK_MENU;
 bool isHold = false;
 bool invertHold = false;
@@ -127,6 +129,24 @@ static const char* holdKeys[hold_arry_size]{
    "Right SHIFT key",
    "Left CONTROL key",
    "Right CONTROL key",
+};
+
+const int profiles_arry_size = 14;
+static const char* profiles[profiles_arry_size]{
+	"default",
+   "pstl_ghst",
+   "pstl_shrf",
+   "rfl_Grdian",
+   "rfl_vndl",
+   "rfl_phntm",
+   "rfl_blldg",
+   "shgn_jdge",
+   "snp_mrshl",
+   "snp_op",
+   "mg_ars",
+   "mg_odn",
+   "smg_spctr",
+   "smg_stng",
 };
 
 static const int holdKeysCodes[hold_arry_size]{
@@ -201,6 +221,8 @@ void InitMoveMouse() {
 	thread normal(NormalMouse);
 	normal.detach();
 }
+
+
 void SendInputs()
 {
 	InterceptionMouseStroke mstroke;
@@ -342,6 +364,9 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 			MoveMouse(moveX * speed, moveY * speed);
 	}
 }
+
+//function to write local variables into xml file
+
 
 bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue) {
 	// updated PURPLE FROM https://www.unknowncheats.me/forum/valorant/437368-updated-colors-pixel-bot-act-4-a.html
@@ -658,70 +683,71 @@ bool InitColor() {
 
 	// ==== CREATE DEVICE ==== 
 
-	HRESULT hr(E_FAIL);
-	D3D_FEATURE_LEVEL lFeatureLevel;
+	//HRESULT hr(E_FAIL);
+	//D3D_FEATURE_LEVEL lFeatureLevel;
 
-	for (UINT DriverTypeIndex = 0; DriverTypeIndex < gNumDriverTypes; ++DriverTypeIndex)
-	{
-		hr = D3D11CreateDevice(
-			nullptr,
-			gDriverTypes[DriverTypeIndex],
-			nullptr,
-			0,
-			gFeatureLevels,
-			gNumFeatureLevels,
-			D3D11_SDK_VERSION,
-			&lDevice,
-			&lFeatureLevel,
-			&lImmediateContext);
+	//for (UINT DriverTypeIndex = 0; DriverTypeIndex < gNumDriverTypes; ++DriverTypeIndex)
+	//{
+	//	hr = D3D11CreateDevice(
+	//		nullptr,
+	//		gDriverTypes[DriverTypeIndex],
+	//		nullptr,
+	//		0,
+	//		gFeatureLevels,
+	//		gNumFeatureLevels,
+	//		D3D11_SDK_VERSION,
+	//		&lDevice,
+	//		&lFeatureLevel,
+	//		&lImmediateContext);
 
-		if (SUCCEEDED(hr))
-		{
-			// Device creation success, no need to loop anymore
-			break;
-		}
+	//	if (SUCCEEDED(hr))
+	//	{
+	//		// Device creation success, no need to loop anymore
+	//		break;
+	//	}
 
-		lDevice.Reset();
+	//	lDevice.Reset();
 
-		lImmediateContext.Reset();
-	}
+	//	lImmediateContext.Reset();
+	//}
 
-	// ==== CREATE TEXTURE ====
+	//// ==== CREATE TEXTURE ====
 
-	desc.Width = width;
-	desc.Height = height;
-	desc.ArraySize = 1;
-	desc.MipLevels = 1;
+	//desc.Width = width;
+	//desc.Height = height;
+	//desc.ArraySize = 1;
+	//desc.MipLevels = 1;
 
-	desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-	desc.SampleDesc.Count = 1;
-	desc.SampleDesc.Quality = 0;
+	//desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+	//desc.SampleDesc.Count = 1;
+	//desc.SampleDesc.Quality = 0;
 
-	desc.Usage = D3D11_USAGE_DEFAULT;
+	//desc.Usage = D3D11_USAGE_DEFAULT;
 
-	desc.BindFlags = 40;
-	desc.MiscFlags = D3D11_RESOURCE_MISC_GDI_COMPATIBLE;
-	desc.CPUAccessFlags = 0;
+	//desc.BindFlags = 40;
+	//desc.MiscFlags = D3D11_RESOURCE_MISC_GDI_COMPATIBLE;
+	//desc.CPUAccessFlags = 0;
 
-	hr = lDevice->CreateTexture2D(&desc, NULL, &texture);
+	//hr = lDevice->CreateTexture2D(&desc, NULL, &texture);
 
-	if (FAILED(hr)) {
-		cout << "Failed to create texture" << endl;
-		return false;
-	}
+	//if (FAILED(hr)) {
+	//	cout << "Failed to create texture" << endl;
+	//	return false;
+	//}
 
-	hr = texture->QueryInterface(__uuidof(IDXGISurface1), (void**)&gdiSurface);
+	//hr = texture->QueryInterface(__uuidof(IDXGISurface1), (void**)&gdiSurface);
 
-	if (FAILED(hr)) {
-		cout << "Failed to create GDI surface" << endl;
-		return false;
-	}
+	//if (FAILED(hr)) {
+	//	cout << "Failed to create GDI surface" << endl;
+	//	return false;
+	//}
 
-	// REUSE desc FOR FRAMECOPY
-	desc.BindFlags = 0;
-	desc.MiscFlags &= D3D11_RESOURCE_MISC_TEXTURECUBE;
-	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-	desc.Usage = D3D11_USAGE_STAGING;
+	//// REUSE desc FOR FRAMECOPY
+	//desc.BindFlags = 0;
+	//desc.MiscFlags &= D3D11_RESOURCE_MISC_TEXTURECUBE;
+	//desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	//desc.Usage = D3D11_USAGE_STAGING;
+
 	InitMoveMouse();
 	cout << "Starting at " << width << "x" << height << endl;
 
@@ -891,8 +917,12 @@ void UpdateSortingMethod(int id) {
 	}
 }
 
-bool ReadConfig() {
-	ifstream cFile("config.txt");
+bool ReadConfig( int index) {
+	string fileName = "Configs/config_";
+	fileName.append(profiles[index]);
+	fileName.append(".txt");
+
+	ifstream cFile(fileName);
 	std::string line;
 	int offsetX = offset[0];
 	int offsetY = offset[1];
@@ -914,6 +944,8 @@ bool ReadConfig() {
 			READ(offsetX);
 			READ(offsetY);
 			READ(flickAim);
+			READ(snapValue);
+			READ(modeSwitchingEnable);
 			READ(flickAimTime);
 			READ(full360);
 			READ(sortingCounter);
@@ -922,6 +954,9 @@ bool ReadConfig() {
 			READ(invertHold);
 			READ(recoilControl);
 			READ(overloadManualInputs);
+			READ(trigger);
+			READ(triggerFov);
+			READ(trgUpdateSpeed);
 		}
 
 		offset[0] = offsetX;
@@ -933,8 +968,11 @@ bool ReadConfig() {
 	}
 }
 
-void SaveConfig() {
-	ofstream cFile("config.txt");
+void SaveConfig(int index) {
+	string fileName = "Configs/config_";
+	fileName.append(profiles[index]);
+	fileName.append(".txt");
+	ofstream cFile(fileName);
 #define WRITE(_name) cFile << NAMEOF(_name) << "=" << _name << "\n";
 
 	int offsetX = offset[0];
@@ -945,12 +983,17 @@ void SaveConfig() {
 	WRITE(maxY);
 	WRITE(offsetX);
 	WRITE(offsetY);
+	WRITE(snapValue);
+	WRITE(modeSwitchingEnable);
 	WRITE(flickAim);
 	WRITE(flickAimTime);
 	WRITE(full360);
 	WRITE(sortingCounter);
 	WRITE(recoilControl);
 	WRITE(overloadManualInputs);
+	WRITE(trigger);
+	WRITE(triggerFov);
+	WRITE(trgUpdateSpeed);
 
 	cFile << "#All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes\n";
 	if (holdKeyIndex > 0) {
@@ -961,19 +1004,48 @@ void SaveConfig() {
 	}
 	WRITE(isHold);
 	WRITE(invertHold);
-	cout << "Saved config" << endl;
+	cout << "Saved config : " << fileName << endl;
+}
+
+void CheckForConfigFiles()
+{
+	//get all txt files in config directory
+	WIN32_FIND_DATA FindFileData;
+	HANDLE hFind;
+	hFind = FindFirstFile(L"Configs\\*.txt", &FindFileData);
+	if (hFind != INVALID_HANDLE_VALUE)
+	{
+		do
+		{
+			//add file to list
+			//convert wchar to string
+			/*string fileName =  FindFileData.cFileName;
+			if (fileName.find("config_") != string::npos)
+			{
+				string profileName = fileName.substr(7, fileName.length() - 8);
+				profiles.push_back(profileName);
+			}*/
+		} while (FindNextFile(hFind, &FindFileData));
+		FindClose(hFind);
+	}
 }
 
 // Main code
 int main(int, char**)
 {
+	//create Test directory if not exists
+	CreateDirectory(DEBUGDIR, NULL);
+	CreateDirectory(CONFIGDIR, NULL);
+
+	//CheckForConfigFiles();
+
 	//logging::INFO("Start of application");
 	cout << "Fetching Config..." << endl;
-	if (!ReadConfig()) {
-		cout << "Failed to read config" << endl;
+	if (!ReadConfig(0)) {
+		cout << "Failed to read config : " << profiles[ProfileIndex] << endl;
 	}
 	else {
-		cout << "Loaded Config" << endl;
+		cout << "Loaded Config : " << profiles[ProfileIndex] << endl;
 	}
 
 	if (!InitColor()) {
@@ -984,15 +1056,12 @@ int main(int, char**)
 	//height = 1920;
 
 	//InitMoveMouse();
-	cout << "Starting at " << width << "x" << height << endl;
+	//cout << "Starting at " << width << "x" << height << endl;
 
 	ScreenGrabModifiedInitialize();
 
 	thread t1(ScreenGrabMain);
 	t1.detach();
-
-	//create Test directory if not exists
-	CreateDirectory(DEBUGDIR, NULL);
 
 	UpdateSortingMethod(sortingCounter);
 
@@ -1083,6 +1152,18 @@ int main(int, char**)
 				}
 			}
 			else {
+				auto temp = ProfileIndex;
+				ImGui::Combo("Select Profile ", &ProfileIndex, profiles , profiles_arry_size);
+				if (ProfileIndex != temp)
+				{
+					if (!ReadConfig(ProfileIndex)) {
+						cout << "Failed to read config : " << profiles[ProfileIndex] << endl;
+					}
+					else {
+						cout << "Loaded Config : " << profiles[ProfileIndex] << endl;
+					}
+				}
+
 				ImGui::SliderFloat("Speed", &speed, 0.0f, 1.0f);
 				//ImGui::InputFloat("Speed", &speed, 0.0f, 1.0f);
 				ImGui::SliderInt("FovX", &maxX, 50, width / 2);
@@ -1157,7 +1238,7 @@ int main(int, char**)
 			}
 
 			if (ImGui::Button("Save Config")) {
-				SaveConfig();
+				SaveConfig(ProfileIndex);
 			}
 			ImGui::SameLine();
 			if (ImGui::Button(isRunning ? "Stop colorbot" : "Start colorbot")) {
@@ -1479,7 +1560,7 @@ void ScreenGrabModified() {
 
 int counterNew = 0;
 void GetImageForDebuggingNew(BYTE* data, int h, int w) {
-	//return;
+	return;
 	int hWidth = width / 2;
 	int hHeight = height / 2;
 	//save ofstream file in debug folder
