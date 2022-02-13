@@ -257,7 +257,7 @@ void MoveMouse(int dx, int dy) {
 		cout << "Cords: x-" << dx << "y-" << dy << endl;
 	interception_send(context, device, &stroke, 1);
 
-	if (trigger && (abs(dx) < triggerFov && abs(dy) < triggerFov))
+	if (trigger && (abs(dx) < (triggerFov + offset[0]) && abs(dy) < (triggerFov + offset[1] + recoilOffset)))
 	{
 		SendInputs();
 	}
@@ -1473,7 +1473,7 @@ bool CheckForTrigger(BYTE* data) {
 	//Vector2 xhair = FindXhair(data, height, width);
 
 	for (int j = 0; j < triggerFov; ++j) {
-		for (int i = 0; i < 5 * triggerFov; i += 4) {
+		for (int i = 0; i < triggerFov * 4; i += 4) {
 			unsigned short red = data[i + (j * triggerFov * 4) + 2];
 			unsigned short green = data[i + (j * triggerFov * 4) + 1];
 			unsigned short blue = data[i + (j * triggerFov * 4) + 0];
