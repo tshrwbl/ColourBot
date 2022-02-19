@@ -23,7 +23,6 @@
 
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
-
 #define PROCESS_NAME L"VALORANT  " 
 //#define PROCESS_NAME L"Untitled - Paint" 
 
@@ -362,6 +361,8 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 			MoveMouse(moveX * speed, moveY * speed);
 	}
 }
+typedef bool(*ColorChecks)(unsigned short , unsigned short , unsigned short );
+ColorChecks currentColorChecks;
 
 bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue) {
 	// updated PURPLE FROM https://www.unknowncheats.me/forum/valorant/437368-updated-colors-pixel-bot-act-4-a.html
@@ -386,6 +387,48 @@ bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue
 	//return red > 240 && green > 90 && green < 190 && blue > 240; // OLD COLOR FUNCTION
 }
 
+bool IsRedColor(unsigned short red, unsigned short green, unsigned short blue)
+{
+	if (red > 200 && (green < 70 && blue < 70))
+	{
+		return true;
+	}
+	return false;
+}
+bool IsYellowColor(unsigned short red, unsigned short green, unsigned short blue)
+{
+	if (red < 160)
+	{
+		return false;
+	}
+	if (red > 161 && red < 255) {
+		return green > 150 && green < 255 && blue > 0 && blue < 79;
+	}
+	return false;
+}
+
+const char* currentColourMethodName;
+void UpdateColorChecks(int counter)
+{
+	switch (counter % 3)
+	{
+		case 0:
+			currentColorChecks = IsPurpleColor;
+			currentColourMethodName = "Purple Colour";
+			break;
+		case 1:
+			currentColorChecks = IsRedColor;
+			currentColourMethodName = "Red Colour";
+			break;
+		case 2:
+			currentColorChecks = IsYellowColor;
+			currentColourMethodName = "Yellow Colour";
+			break;
+		default:
+			break;
+	}
+}
+
 bool FirstColorSorting(char* data, int height, int width) {
 	int hWidth = width / 2;
 	int hHeight = height / 2;
@@ -395,7 +438,7 @@ bool FirstColorSorting(char* data, int height, int width) {
 			unsigned short red = data[base + 2] & 255;
 			unsigned short green = data[base + 1] & 255;
 			unsigned short blue = data[base] & 255;
-			if (IsPurpleColor(red, green, blue)) {
+			if (currentColorChecks(red, green, blue)) {
 				MoveMouseFromScreenPosition(Vector2(x - hWidth, y - hHeight), height, width);
 				return true;
 			}
@@ -430,7 +473,7 @@ void GetImageForDebugging(char* data, int height, int width) {
 			unsigned short green = data[base + 1] & 255;
 			unsigned short blue = data[base] & 255;
 			img << red << " " << green << " " << blue << "\n";
-			if (IsPurpleColor(red, green, blue))
+			if (currentColorChecks(red, green, blue))
 				img2 << red << " " << green << " " << blue << "\n";
 			else
 				img2 << 0 << " " << 0 << " " << 0 << "\n";
@@ -486,7 +529,7 @@ bool SingleTargetPrioritySorting(char* data, int height, int width) {
 					unsigned short red = data[base + 2] & 255;
 					unsigned short green = data[base + 1] & 255;
 					unsigned short blue = data[base] & 255;
-					if (IsPurpleColor(red, green, blue)) {
+					if (currentColorChecks(red, green, blue)) {
 						vects.push_back(Vector2(x - hWidth, y - hHeight));
 						/*if (recoil)
 						{
@@ -515,7 +558,7 @@ bool SingleTargetPrioritySorting(char* data, int height, int width) {
 					unsigned short red = data[base + 2] & 255;
 					unsigned short green = data[base + 1] & 255;
 					unsigned short blue = data[base] & 255;
-					if (IsPurpleColor(red, green, blue)) {
+					if (currentColorChecks(red, green, blue)) {
 						vects.push_back(Vector2(x - hWidth, y - hHeight));
 						/*if (recoil)
 						{
@@ -601,7 +644,7 @@ bool CustomPrioritySorting(char* data, int height, int width) {
 			unsigned short red = data[base + 2] & 255;
 			unsigned short green = data[base + 1] & 255;
 			unsigned short blue = data[base] & 255;
-			if (IsPurpleColor(red, green, blue)) {
+			if (currentColorChecks(red, green, blue)) {
 				vects.push_back(Vector2(x - hWidth, y - hHeight));
 				/*if (recoil)
 				{
@@ -886,7 +929,10 @@ void ScreenGrabMain() {
 }
 
 int sortingCounter = 0;
+int ColourCounter = 0;
+
 const char* currentSortingMethodName;
+
 const char* currentSortingMethodDescript;
 void UpdateSortingMethod(int id) {
 	switch (id % 3)
@@ -1001,266 +1047,7 @@ void SaveConfig(int index) {
 	cout << "Saved config : " << fileName << endl;
 }
 
-// Main code
-int main(int, char**)
-{
-	//create Test directory if not exists
-	CreateDirectory(DEBUGDIR, NULL);
-	CreateDirectory(CONFIGDIR, NULL);
 
-	//CheckForConfigFiles();
-
-	//logging::INFO("Start of application");
-	cout << "Fetching Config..." << endl;
-	if (!ReadConfig(0)) {
-		cout << "Failed to read config : " << profiles[ProfileIndex] << endl;
-	}
-	else {
-		cout << "Loaded Config : " << profiles[ProfileIndex] << endl;
-	}
-
-	if (!InitColor()) {
-		cin.get();
-		return -1;
-	}
-	//width = 1080;
-	//height = 1920;
-
-	//InitMoveMouse();
-	cout << "Starting at " << width << "x" << height << endl;
-
-	ScreenGrabModifiedInitialize();
-
-	thread t1(ScreenGrabMain);
-	t1.detach();
-
-	UpdateSortingMethod(sortingCounter);
-
-	WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("ImGui Example"), NULL };
-	::RegisterClassEx(&wc);
-
-	HWND hwnd = ::CreateWindow(wc.lpszClassName, _T("LABADABA dub dub's"), WS_OVERLAPPEDWINDOW, 0, 0, 400, 600, NULL, NULL, wc.hInstance, NULL);
-
-
-	HICON hIcon = LoadIcon(wc.hInstance, MAKEINTRESOURCE(MAINICON));
-
-	SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
-	SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
-
-	// Initialize Direct3D
-	if (!CreateDeviceD3D(hwnd))
-	{
-		CleanupDeviceD3D();
-		::UnregisterClass(wc.lpszClassName, wc.hInstance);
-		return 1;
-	}
-
-	// Show the window
-	::ShowWindow(hwnd, SW_SHOWDEFAULT);
-	::UpdateWindow(hwnd);
-
-	// Setup Dear ImGui context
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGuiIO& io = ImGui::GetIO(); (void)io;
-
-	// Setup Dear ImGui style
-	ImGui::StyleColorsDark();
-	//ImGui::StyleColorsClassic();
-
-	// Setup Platform/Renderer backends
-	ImGui_ImplWin32_Init(hwnd);
-	ImGui_ImplDX9_Init(g_pd3dDevice);
-
-	ImVec4 clear_color = ImVec4(0.0f, 0.0f, 0.10f, 1.00f);
-
-	holdKeyIndex = -1;
-	for (size_t i = 0; i < hold_arry_size; i++)
-	{
-		if (holdKeysCodes[i] == holdKey) {
-			holdKeyIndex = i;
-			break;
-		}
-	}
-
-	// Main loop
-	MSG msg;
-	ZeroMemory(&msg, sizeof(msg));
-	while (msg.message != WM_QUIT)
-	{
-		if (::PeekMessage(&msg, NULL, 0U, 0U, PM_REMOVE))
-		{
-			::TranslateMessage(&msg);
-			::DispatchMessage(&msg);
-			continue;
-		}
-
-		// Start the Dear ImGui frame
-		ImGui_ImplDX9_NewFrame();
-		ImGui_ImplWin32_NewFrame();
-		ImGui::NewFrame();
-		auto flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings;
-
-		{
-
-			ImGui::SetNextWindowPos(ImVec2(0, 0));
-			ImGui::SetNextWindowSize(ImVec2(400, 580), 0);
-			ImGui::Begin("Settings", 0, flags);
-
-			ImGui::Text("Setting");
-
-			if (ImGui::Button(testFull360 ? "Stop Full360" : "Start Full360")) {
-				testFull360 = !testFull360;
-			}
-			if (testFull360) {
-				ImGui::InputInt("Full360", &full360);
-
-				if (holdKeyIndex > 0) {
-					ImGui::Text("Testing Full360, you most scope with vandal\nand configure so it turns 360 degrees\nwhen pressing [%s]", holdKeys[holdKeyIndex]);
-				}
-				else {
-					ImGui::Text("Testing Full360, you most scope with vandal\nand configure so it turns 360 degrees");
-				}
-			}
-			else {
-				auto temp = ProfileIndex;
-				ImGui::Combo("Select Profile ", &ProfileIndex, profiles , profiles_arry_size);
-				if (ProfileIndex != temp)
-				{
-					if (!ReadConfig(ProfileIndex)) {
-						cout << "Failed to read config : " << profiles[ProfileIndex] << endl;
-					}
-					else {
-						cout << "Loaded Config : " << profiles[ProfileIndex] << endl;
-					}
-				}
-
-				ImGui::SliderFloat("Speed", &speed, 0.0f, 1.0f);
-				//ImGui::InputFloat("Speed", &speed, 0.0f, 1.0f);
-				ImGui::SliderInt("FovX", &maxX, 50, width / 2);
-				ImGui::SliderInt("FovY", &maxY, 50, height / 2);
-				ImGui::InputInt2("Offset XY", offset);
-				ImGui::InputInt("Full360", &full360);
-				ImGui::Text("Flick Aimbot");
-				ImGui::Checkbox("Flick", &flickAim);
-				ImGui::InputInt("Flick Update ms", &flickAimTime);
-				//ImGui::InputInt("Range to update", &checkingRangeSingleTarget);
-				ImGui::InputInt("Snap value", &snapValue);
-				ImGui::Checkbox("Recoil Control", &recoilControl);
-				//ImGui::Text("Recol New Method");
-				//ImGui::Checkbox("Recoil New Method", &recoil);
-				ImGui::Checkbox("Overload Manual Inputs", &overloadManualInputs);
-				ImGui::Checkbox("Mode Switch", &modeSwitchingEnable);
-				ImGui::Checkbox("Trigger control", &trigger);
-				if (trigger)
-				{
-					ImGui::InputInt("Trigger Fov", &triggerFov);
-					ImGui::InputInt("Update speed", &trgUpdateSpeed);
-				}
-
-				if (isRunning && modeSwitchingEnable)
-				{
-					if (GetKeyState(VK_MENU) == 1)
-					{
-						if (!flickAim)
-							Beep(523, 200);
-						flickAim = true;
-					}
-					else
-					{
-						if (flickAim)
-						{
-							Beep(223, 100);
-							Beep(223, 100);
-						}
-						flickAim = false;
-					}
-					Sleep(20);
-				}
-
-				if (flickAimTime < 0) {
-					flickAimTime = 0;
-				}
-			}
-
-			ImGui::Text("Input Settings");
-			ImGui::Checkbox("Hold", &isHold);
-			/*if(isHold) {
-				ImGui::Checkbox("Invert Hold", &invertHold);
-			}*/
-
-			if (holdKeyIndex > 0) {
-				ImGui::Combo(isHold ? "Hold key" : "Toggle Key", &holdKeyIndex, holdKeys, hold_arry_size);
-				holdKey = holdKeysCodes[holdKeyIndex];
-			}
-			else {
-				ImGui::TextColored(ImVec4(0.4f, 0, 1, 1), "Custom key used: 0x%llX", holdKey);
-			}
-
-			if (!testFull360) {
-				ImGui::Text("Sorting Method");
-
-				if (ImGui::Button(currentSortingMethodName)) {
-					sortingCounter++;
-					UpdateSortingMethod(sortingCounter);
-				}
-				ImGui::SameLine();
-				ImGui::Text(currentSortingMethodDescript);
-			}
-
-			if (ImGui::Button("Save Config")) {
-				SaveConfig(ProfileIndex);
-			}
-			ImGui::SameLine();
-			if (ImGui::Button(isRunning ? "Stop colorbot" : "Start colorbot")) {
-				isRunning = !isRunning;
-			}
-			if (isRunning && isReallyRunning) {
-				ImGui::SameLine();
-				ImGui::TextColored(ImVec4(0.4f, 0, 1, 1), "Running");
-			}
-			if (full360 <= 0) {
-				ImGui::Text("TO USE THIS COLORBOT \nFULL360 MUST BE CONFIGURED CORRECTLY\nTHIS IS DIFFERENT FOR ALL COMPUTERS\n\nTHE OPTIMAL SPEED I FOUND OUT TO BE AROUND 0.2\nSO IMO, ONLY CHANGE FULL360\n(FULL360 SHOULD BE AROUND 5000-25000)");
-			}
-			ImGui::Checkbox("Debug", &isDebugging);
-
-			if (isDebugging)
-				ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-
-			ImGui::End();
-		}
-
-		// Rendering
-		ImGui::EndFrame();
-		g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
-		g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
-		g_pd3dDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
-		D3DCOLOR clear_col_dx = D3DCOLOR_RGBA((int)(clear_color.x * clear_color.w * 255.0f), (int)(clear_color.y * clear_color.w * 255.0f), (int)(clear_color.z * clear_color.w * 255.0f), (int)(clear_color.w * 255.0f));
-		g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
-		if (g_pd3dDevice->BeginScene() >= 0)
-		{
-			ImGui::Render();
-			ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
-			g_pd3dDevice->EndScene();
-		}
-		HRESULT result = g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
-
-		// Handle loss of D3D9 device
-		if (result == D3DERR_DEVICELOST && g_pd3dDevice->TestCooperativeLevel() == D3DERR_DEVICENOTRESET)
-			ResetDevice();
-	}
-
-	ImGui_ImplDX9_Shutdown();
-	ImGui_ImplWin32_Shutdown();
-	ImGui::DestroyContext();
-
-	CleanupDeviceD3D();
-	::DestroyWindow(hwnd);
-	::UnregisterClass(wc.lpszClassName, wc.hInstance);
-
-	//logging::INFO("Exit....");
-	return 0;
-}
 
 // Helper functions
 
@@ -1365,7 +1152,7 @@ void CheckForTrg(BYTE* data, int h, int w) {
 			unsigned short green = data[i + (j * w * 4) + 1];
 			unsigned short blue = data[i + (j * w * 4) + 0];
 
-			if (IsPurpleColor(red, green, blue)) {
+			if (currentColorChecks(red, green, blue)) {
 				SendInputs();
 				return;
 			}
@@ -1395,7 +1182,7 @@ bool NewSortingMethod(BYTE* data, int h, int w) {
 			unsigned short green = data[i + (j * w * 4) + 1];
 			unsigned short blue = data[i + (j * w * 4) + 0];
 
-			if (IsPurpleColor(red, green, blue)) {
+			if (currentColorChecks(red, green, blue)) {
 				vects.push_back(Vector2((i / 4) - (w / 2), j - (h / 2)));
 			}
 		}
@@ -1407,7 +1194,7 @@ bool NewSortingMethod(BYTE* data, int h, int w) {
 	//		unsigned short red = data[base + 2] & 255;
 	//		unsigned short green = data[base + 1] & 255;
 	//		unsigned short blue = data[base] & 255;
-	//		if (IsPurpleColor(red, green, blue)) {
+	//		if (currentColorChecks(red, green, blue)) {
 	//			vects.push_back(Vector2(x - hWidth, y - hHeight));
 	//			/*if (recoil)
 	//			{
@@ -1478,7 +1265,7 @@ bool CheckForTrigger(BYTE* data) {
 			unsigned short green = data[i + (j * triggerFov * 4) + 1];
 			unsigned short blue = data[i + (j * triggerFov * 4) + 0];
 
-			if (IsPurpleColor(red, green, blue)) {
+			if (currentColorChecks(red, green, blue)) {
 				//vects.push_back(Vector2((i / 4) - (triggerFov / 2), j - (triggerFov / 2)));
 				SendInputs();
 				return true;
@@ -1555,7 +1342,7 @@ void GetImageForDebuggingNew(BYTE* data, int h, int w) {
 			unsigned short green = data[i + (j * w * 4) + 1];
 			unsigned short blue = data[i + (j * w * 4) + 0];
 			img << red << " " << green << " " << blue << "\n";
-			if (IsPurpleColor(red, green, blue))
+			if (currentColorChecks(red, green, blue))
 				img2 << red << " " << green << " " << blue << "\n";
 			else
 				img2 << 0 << " " << 0 << " " << 0 << "\n";
@@ -1571,7 +1358,7 @@ void GetImageForDebuggingNew(BYTE* data, int h, int w) {
 	//		unsigned short green = data[base + 1] & 255;
 	//		unsigned short blue = data[base] & 255;
 	//		img << red << " " << green << " " << blue << "\n";
-	//		if (IsPurpleColor(red, green, blue))
+	//		if (currentColorChecks(red, green, blue))
 	//			img2 << red << " " << green << " " << blue << "\n";
 	//		else
 	//			img2 << 0 << " " << 0 << " " << 0 << "\n";
@@ -1579,6 +1366,276 @@ void GetImageForDebuggingNew(BYTE* data, int h, int w) {
 	//}
 
 	cout << counterNew << " Images saved" << endl;
+}
+
+// Main code
+int main(int, char**)
+{
+	//create Test directory if not exists
+	CreateDirectory(DEBUGDIR, NULL);
+	CreateDirectory(CONFIGDIR, NULL);
+
+	//CheckForConfigFiles();
+
+	//logging::INFO("Start of application");
+	cout << "Fetching Config..." << endl;
+	if (!ReadConfig(0)) {
+		cout << "Failed to read config : " << profiles[ProfileIndex] << endl;
+	}
+	else {
+		cout << "Loaded Config : " << profiles[ProfileIndex] << endl;
+	}
+
+	if (!InitColor()) {
+		cin.get();
+		return -1;
+	}
+	//width = 1080;
+	//height = 1920;
+
+	//InitMoveMouse();
+	cout << "Starting at " << width << "x" << height << endl;
+
+	ScreenGrabModifiedInitialize();
+
+	thread t1(ScreenGrabMain);
+	t1.detach();
+
+	UpdateSortingMethod(sortingCounter);
+	UpdateColorChecks(ColourCounter);
+
+	WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("ImGui Example"), NULL };
+	::RegisterClassEx(&wc);
+
+	HWND hwnd = ::CreateWindow(wc.lpszClassName, _T("LABADABA dub dub's"), WS_OVERLAPPEDWINDOW, 0, 0, 400, 600, NULL, NULL, wc.hInstance, NULL);
+
+
+	HICON hIcon = LoadIcon(wc.hInstance, MAKEINTRESOURCE(MAINICON));
+
+	SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+	SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+
+	// Initialize Direct3D
+	if (!CreateDeviceD3D(hwnd))
+	{
+		CleanupDeviceD3D();
+		::UnregisterClass(wc.lpszClassName, wc.hInstance);
+		return 1;
+	}
+
+	// Show the window
+	::ShowWindow(hwnd, SW_SHOWDEFAULT);
+	::UpdateWindow(hwnd);
+
+	// Setup Dear ImGui context
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+
+	// Setup Dear ImGui style
+	ImGui::StyleColorsDark();
+	//ImGui::StyleColorsClassic();
+
+	// Setup Platform/Renderer backends
+	ImGui_ImplWin32_Init(hwnd);
+	ImGui_ImplDX9_Init(g_pd3dDevice);
+
+	ImVec4 clear_color = ImVec4(0.0f, 0.0f, 0.10f, 1.00f);
+
+	holdKeyIndex = -1;
+	for (size_t i = 0; i < hold_arry_size; i++)
+	{
+		if (holdKeysCodes[i] == holdKey) {
+			holdKeyIndex = i;
+			break;
+		}
+	}
+
+	// Main loop
+	MSG msg;
+	ZeroMemory(&msg, sizeof(msg));
+	while (msg.message != WM_QUIT)
+	{
+		if (::PeekMessage(&msg, NULL, 0U, 0U, PM_REMOVE))
+		{
+			::TranslateMessage(&msg);
+			::DispatchMessage(&msg);
+			continue;
+		}
+
+		// Start the Dear ImGui frame
+		ImGui_ImplDX9_NewFrame();
+		ImGui_ImplWin32_NewFrame();
+		ImGui::NewFrame();
+		auto flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings;
+
+		{
+
+			ImGui::SetNextWindowPos(ImVec2(0, 0));
+			ImGui::SetNextWindowSize(ImVec2(400, 580), 0);
+			ImGui::Begin("Settings", 0, flags);
+
+			ImGui::Text("Setting");
+
+			if (ImGui::Button(testFull360 ? "Stop Full360" : "Start Full360")) {
+				testFull360 = !testFull360;
+			}
+			if (testFull360) {
+				ImGui::InputInt("Full360", &full360);
+
+				if (holdKeyIndex > 0) {
+					ImGui::Text("Testing Full360, you most scope with vandal\nand configure so it turns 360 degrees\nwhen pressing [%s]", holdKeys[holdKeyIndex]);
+				}
+				else {
+					ImGui::Text("Testing Full360, you most scope with vandal\nand configure so it turns 360 degrees");
+				}
+			}
+			else {
+				auto temp = ProfileIndex;
+				ImGui::Combo("Select Profile ", &ProfileIndex, profiles, profiles_arry_size);
+				if (ProfileIndex != temp)
+				{
+					if (!ReadConfig(ProfileIndex)) {
+						cout << "Failed to read config : " << profiles[ProfileIndex] << endl;
+					}
+					else {
+						cout << "Loaded Config : " << profiles[ProfileIndex] << endl;
+					}
+				}
+
+				ImGui::SliderFloat("Speed", &speed, 0.0f, 1.0f);
+				//ImGui::InputFloat("Speed", &speed, 0.0f, 1.0f);
+				ImGui::SliderInt("FovX", &maxX, 50, width / 2);
+				ImGui::SliderInt("FovY", &maxY, 50, height / 2);
+				ImGui::InputInt2("Offset XY", offset);
+				ImGui::InputInt("Full360", &full360);
+				//ImGui::Text("Flick Aimbot");
+				ImGui::Checkbox("Flick", &flickAim);
+				ImGui::InputInt("Flick Update ms", &flickAimTime);
+				//ImGui::InputInt("Range to update", &checkingRangeSingleTarget);
+				ImGui::InputInt("Snap value", &snapValue);
+				ImGui::Checkbox("Recoil Control", &recoilControl);
+				//ImGui::Text("Recol New Method");
+				//ImGui::Checkbox("Recoil New Method", &recoil);
+				ImGui::Checkbox("Overload Manual Inputs", &overloadManualInputs);
+				ImGui::Checkbox("Mode Switch", &modeSwitchingEnable);
+				ImGui::Checkbox("Trigger control", &trigger);
+				if (trigger)
+				{
+					ImGui::InputInt("Trigger Fov", &triggerFov);
+					ImGui::InputInt("Update speed", &trgUpdateSpeed);
+				}
+
+				if (isRunning && modeSwitchingEnable)
+				{
+					if (GetKeyState(VK_MENU) == 1)
+					{
+						if (!flickAim)
+							Beep(523, 200);
+						flickAim = true;
+					}
+					else
+					{
+						if (flickAim)
+						{
+							Beep(223, 100);
+							Beep(223, 100);
+						}
+						flickAim = false;
+					}
+					Sleep(20);
+				}
+
+				if (flickAimTime < 0) {
+					flickAimTime = 0;
+				}
+			}
+
+			ImGui::Text("Input Settings");
+			ImGui::Checkbox("Hold", &isHold);
+			/*if(isHold) {
+				ImGui::Checkbox("Invert Hold", &invertHold);
+			}*/
+
+			if (holdKeyIndex > 0) {
+				ImGui::Combo(isHold ? "Hold key" : "Toggle Key", &holdKeyIndex, holdKeys, hold_arry_size);
+				holdKey = holdKeysCodes[holdKeyIndex];
+			}
+			else {
+				ImGui::TextColored(ImVec4(0.4f, 0, 1, 1), "Custom key used: 0x%llX", holdKey);
+			}
+
+			if (!testFull360) {
+				ImGui::Text("Sorting Method");
+
+				if (ImGui::Button(currentSortingMethodName)) {
+					sortingCounter++;
+					UpdateSortingMethod(sortingCounter);
+				}
+				ImGui::SameLine();
+				ImGui::Text(currentSortingMethodDescript);
+
+				ImGui::Text("Color Selection");
+
+				if (ImGui::Button(currentColourMethodName)) {
+					ColourCounter++;
+					UpdateColorChecks(ColourCounter);
+				}
+
+			}
+
+			if (ImGui::Button("Save Config")) {
+				SaveConfig(ProfileIndex);
+			}
+			ImGui::SameLine();
+			if (ImGui::Button(isRunning ? "Stop colorbot" : "Start colorbot")) {
+				isRunning = !isRunning;
+			}
+			if (isRunning && isReallyRunning) {
+				ImGui::SameLine();
+				ImGui::TextColored(ImVec4(0.4f, 0, 1, 1), "Running");
+			}
+			if (full360 <= 0) {
+				ImGui::Text("TO USE THIS COLORBOT \nFULL360 MUST BE CONFIGURED CORRECTLY\nTHIS IS DIFFERENT FOR ALL COMPUTERS\n\nTHE OPTIMAL SPEED I FOUND OUT TO BE AROUND 0.2\nSO IMO, ONLY CHANGE FULL360\n(FULL360 SHOULD BE AROUND 5000-25000)");
+			}
+			ImGui::Checkbox("Debug", &isDebugging);
+
+			if (isDebugging)
+				ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
+			ImGui::End();
+		}
+
+		// Rendering
+		ImGui::EndFrame();
+		g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, FALSE);
+		g_pd3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+		g_pd3dDevice->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+		D3DCOLOR clear_col_dx = D3DCOLOR_RGBA((int)(clear_color.x * clear_color.w * 255.0f), (int)(clear_color.y * clear_color.w * 255.0f), (int)(clear_color.z * clear_color.w * 255.0f), (int)(clear_color.w * 255.0f));
+		g_pd3dDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, clear_col_dx, 1.0f, 0);
+		if (g_pd3dDevice->BeginScene() >= 0)
+		{
+			ImGui::Render();
+			ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
+			g_pd3dDevice->EndScene();
+		}
+		HRESULT result = g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
+
+		// Handle loss of D3D9 device
+		if (result == D3DERR_DEVICELOST && g_pd3dDevice->TestCooperativeLevel() == D3DERR_DEVICENOTRESET)
+			ResetDevice();
+	}
+
+	ImGui_ImplDX9_Shutdown();
+	ImGui_ImplWin32_Shutdown();
+	ImGui::DestroyContext();
+
+	CleanupDeviceD3D();
+	::DestroyWindow(hwnd);
+	::UnregisterClass(wc.lpszClassName, wc.hInstance);
+
+	//logging::INFO("Exit....");
+	return 0;
 }
 
 
