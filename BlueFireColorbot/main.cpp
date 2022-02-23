@@ -167,8 +167,7 @@ static const int holdKeysCodes[hold_arry_size]{
 };
 
 void GetImageForDebuggingNew(BYTE* data, int h, int w);
-void ScreenGrabModifiedInitialize();
-void ScreenGrabModified();
+
 
 // Data
 static LPDIRECT3D9              g_pD3D = NULL;
@@ -180,6 +179,10 @@ bool CreateDeviceD3D(HWND hWnd);
 void CleanupDeviceD3D();
 void ResetDevice();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+void CheckForTrg(BYTE* data, int h, int w);
+
+bool NewSortingMethod(BYTE* data, int h, int w);
 
 uint32_t width;
 uint32_t height;
@@ -350,8 +353,8 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 		MoveMouse(moveX, moveY);
 		Sleep(flickAimTime);
 
-		trueX = onTargetLockX;
-		trueY = onTargetLockY;
+		/*trueX = onTargetLockX;
+		trueY = onTargetLockY;*/
 	}
 	else {
 
@@ -708,6 +711,8 @@ bool InitColor() {
 	// ==== FIND WINDOW ==== 
 	RECT rect;
 	game_window = FindWindowW(NULL, PROCESS_NAME);
+	//game_window = GetDesktopWindow();
+
 	GetClientRect(game_window, &rect);
 
 	// ==== SCALING FACTOR ====
@@ -868,13 +873,79 @@ bool ScreenGrab() {
 			last_g = green;
 			last_r = red;
 		}
-		GetImageForDebugging(data, desc.Height, desc.Width);
+		//GetImageForDebugging(data, desc.Height, desc.Width);
 	}
 	return true;
 }
 
 bool isRunning = false;
 bool isReallyRunning = false;
+
+BYTE* screenData = 0;
+BITMAPINFOHEADER bmi;
+HDC hScreen;
+HBITMAP hBitmap;
+HDC hDC;
+
+void ScreenGrabModified() {
+
+	//auto t_start = std::chrono::high_resolution_clock::now();
+	//auto t_end = std::chrono::high_resolution_clock::now();
+
+	//while (run_threads) {
+	//Sleep(6);
+
+	int w = maxX * 2;
+	int h = maxY * 2;
+
+	Vector2 middle_screen(width / 2, height / 2);
+	HGDIOBJ old_obj = SelectObject(hDC, hBitmap);
+	BOOL bRet = BitBlt(hDC, 0, 0, trueX * 2, trueY * 2, hScreen, middle_screen.x - (w / 2), middle_screen.y - (h / 2), SRCCOPY);
+	SelectObject(hDC, old_obj);
+	GetDIBits(hDC, hBitmap, 0, h, screenData, (BITMAPINFO*)&bmi, DIB_RGB_COLORS);
+
+
+	if (lmbTrigger)
+	{
+		CheckForTrg(screenData, h, w);
+	}
+	else if (!NewSortingMethod(screenData, h, w) && flickAim)
+	{
+		trueX = maxX;
+		trueY = maxY;
+	}
+
+	/*if (trigger)
+	{
+		CheckForTrigger(screenData);
+	}*/
+
+	if (isDebugging)
+	{
+		GetImageForDebuggingNew(screenData, h, w);
+	}
+	//}
+}
+
+void ScreenGrabModifiedInitialize() {
+	int w = maxX * 2;
+	int h = maxY * 2;
+	hScreen = GetDC(NULL);
+	hBitmap = CreateCompatibleBitmap(hScreen, w, h);
+	screenData = (BYTE*)malloc(5 * width * height);
+	hDC = CreateCompatibleDC(hScreen);
+	//point middle_screen(width / 2, height / 2);
+
+	bmi = { 0 };
+	bmi.biSize = sizeof(BITMAPINFOHEADER);
+	bmi.biPlanes = 1;
+	bmi.biBitCount = 32;
+	bmi.biWidth = w;
+	bmi.biHeight = -h;
+	bmi.biCompression = BI_RGB;
+	bmi.biSizeImage = 0;
+}
+
 
 void ScreenGrabMain() {
 	while (true) {
@@ -902,9 +973,10 @@ void ScreenGrabMain() {
 				}
 			}
 			else {
-				//lmbTrigger = (GetKeyState(VK_RBUTTON) & 0x8000);
+				lmbTrigger = (GetKeyState(VK_RBUTTON) & 0x8000);
 				if (lmbTrigger)
 				{
+					//ScreenGrab();
 					ScreenGrabModified();
 				}
 				else
@@ -1117,34 +1189,10 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 }
 
 
-BYTE* screenData = 0;
-BITMAPINFOHEADER bmi;
-HDC hScreen;
-HBITMAP hBitmap;
-HDC hDC;
 
-
-void ScreenGrabModifiedInitialize() {
-	int w = maxX * 2;
-	int h = maxY * 2;
-	hScreen = GetDC(NULL);
-	hBitmap = CreateCompatibleBitmap(hScreen, w, h);
-	screenData = (BYTE*)malloc(5 * width * height);
-	hDC = CreateCompatibleDC(hScreen);
-	//point middle_screen(width / 2, height / 2);
-
-	bmi = { 0 };
-	bmi.biSize = sizeof(BITMAPINFOHEADER);
-	bmi.biPlanes = 1;
-	bmi.biBitCount = 32;
-	bmi.biWidth = w;
-	bmi.biHeight = -h;
-	bmi.biCompression = BI_RGB;
-	bmi.biSizeImage = 0;
-}
-
-
-void CheckForTrg(BYTE* data, int h, int w) {
+void CheckForTrg(BYTE* data, int h, int w)
+{
+	
 
 	for (int j = 0; j < h; ++j) {
 		for (int i = 0; i < w * 4; i += 4) {
@@ -1153,15 +1201,14 @@ void CheckForTrg(BYTE* data, int h, int w) {
 			unsigned short blue = data[i + (j * w * 4) + 0];
 
 			if (currentColorChecks(red, green, blue)) {
-				SendInputs();
-				return;
+				//vects.push_back(Vector2((i / 4) - (w / 2), j - (h / 2)));
+				if (abs((i / 4) - (w / 2)) < 5 && abs(j - (h / 2)) < 5)
+				{
+					SendInputs();
+					return;
+				}
 			}
 		}
-	}
-
-	if (isDebugging)
-	{
-		GetImageForDebuggingNew(screenData, h, w);
 	}
 	
 }
@@ -1229,8 +1276,9 @@ bool NewSortingMethod(BYTE* data, int h, int w) {
 				if (abs(current.x + forb.x) < forSize) {
 					canUpdate = false;
 					break;
-				}
+				}			
 			}
+
 			if (canUpdate) {
 				forbidden.push_front(current);
 				if (forbidden.size() > maxCount) {
@@ -1243,6 +1291,7 @@ bool NewSortingMethod(BYTE* data, int h, int w) {
 				{
 					//return sqrt(pow(lhs.x, 2) + pow(lhs.y * 10, 2)) < sqrt(pow(rhs.x, 2) + pow(rhs.y * 10, 2));
 					return (pow(lhs.x, 2) + pow(lhs.y, 2)) < (pow(rhs.x, 2) + pow(rhs.y, 2));
+					//return  lhs.x < rhs.x;
 				});
 			Vector2 front = forbidden.front();
 			MoveMouseFromScreenPosition(front, height, width);
@@ -1275,50 +1324,9 @@ bool CheckForTrigger(BYTE* data) {
 	return false;
 }
 
-void ScreenGrabModified() {
-
-	//auto t_start = std::chrono::high_resolution_clock::now();
-	//auto t_end = std::chrono::high_resolution_clock::now();
-
-	//while (run_threads) {
-	//Sleep(6);
-
-	int w = maxX * 2;
-	int h = maxY * 2;
-
-	Vector2 middle_screen(width / 2, height / 2);
-	HGDIOBJ old_obj = SelectObject(hDC, hBitmap);
-	BOOL bRet = BitBlt(hDC, 0, 0, trueX * 2, trueY * 2, hScreen, middle_screen.x - (w / 2), middle_screen.y - (h / 2), SRCCOPY);
-	SelectObject(hDC, old_obj);
-	GetDIBits(hDC, hBitmap, 0, h, screenData, (BITMAPINFO*)&bmi, DIB_RGB_COLORS);
-
-
-	if (lmbTrigger)
-	{
-		CheckForTrg(screenData, h, w);
-	}
-	else if (!NewSortingMethod(screenData, h, w) && flickAim)
-	{
-		trueX = maxX;
-		trueY = maxY;
-	}
-
-	/*if (trigger)
-	{
-		CheckForTrigger(screenData);
-	}*/
-
-	if (isDebugging)
-	{
-		GetImageForDebuggingNew(screenData, h, w);
-	}
-	//}
-}
-
-
 int counterNew = 0;
 void GetImageForDebuggingNew(BYTE* data, int h, int w) {
-	return;
+	//return;
 	int hWidth = width / 2;
 	int hHeight = height / 2;
 	//save ofstream file in debug folder
@@ -1367,6 +1375,19 @@ void GetImageForDebuggingNew(BYTE* data, int h, int w) {
 
 	cout << counterNew << " Images saved" << endl;
 }
+
+
+bool IsConsoleVisible = true;
+void ConsoleVisSwitch()
+{
+	if(IsConsoleVisible)
+		::ShowWindow(::GetConsoleWindow(), SW_HIDE);
+	else 
+		::ShowWindow(::GetConsoleWindow(), SW_SHOW);
+
+	IsConsoleVisible = !IsConsoleVisible;
+}
+
 
 // Main code
 int main(int, char**)
@@ -1451,6 +1472,9 @@ int main(int, char**)
 		}
 	}
 
+	//Hiding console
+	ConsoleVisSwitch();
+
 	// Main loop
 	MSG msg;
 	ZeroMemory(&msg, sizeof(msg));
@@ -1492,7 +1516,7 @@ int main(int, char**)
 			}
 			else {
 				auto temp = ProfileIndex;
-				ImGui::Combo("Select Profile ", &ProfileIndex, profiles, profiles_arry_size);
+				ImGui::Combo("Select Profile ", &ProfileIndex, profiles, profiles_arry_size, profiles_arry_size);
 				if (ProfileIndex != temp)
 				{
 					if (!ReadConfig(ProfileIndex)) {
@@ -1511,14 +1535,18 @@ int main(int, char**)
 				ImGui::InputInt("Full360", &full360);
 				//ImGui::Text("Flick Aimbot");
 				ImGui::Checkbox("Flick", &flickAim);
-				ImGui::InputInt("Flick Update ms", &flickAimTime);
+				ImGui::SameLine();
+				ImGui::PushItemWidth(195);
+				ImGui::InputInt("ms", &flickAimTime);
 				//ImGui::InputInt("Range to update", &checkingRangeSingleTarget);
-				ImGui::InputInt("Snap value", &snapValue);
+				ImGui::InputInt("Ignore Smooth", &snapValue);
 				ImGui::Checkbox("Recoil Control", &recoilControl);
+				ImGui::SameLine();
 				//ImGui::Text("Recol New Method");
 				//ImGui::Checkbox("Recoil New Method", &recoil);
 				ImGui::Checkbox("Overload Manual Inputs", &overloadManualInputs);
 				ImGui::Checkbox("Mode Switch", &modeSwitchingEnable);
+
 				ImGui::Checkbox("Trigger control", &trigger);
 				if (trigger)
 				{
@@ -1528,18 +1556,18 @@ int main(int, char**)
 
 				if (isRunning && modeSwitchingEnable)
 				{
-					if (GetKeyState(VK_MENU) == 1)
+					if (GetKeyState(VK_CAPITAL) == 1)
 					{
 						if (!flickAim)
-							Beep(523, 200);
+							Beep(500, 200);
 						flickAim = true;
 					}
 					else
 					{
 						if (flickAim)
 						{
-							Beep(223, 100);
-							Beep(223, 100);
+							Beep(225, 100);
+							Beep(225, 100);
 						}
 						flickAim = false;
 					}
@@ -1583,7 +1611,7 @@ int main(int, char**)
 				}
 
 			}
-
+			ImGui::SameLine();
 			if (ImGui::Button("Save Config")) {
 				SaveConfig(ProfileIndex);
 			}
@@ -1598,6 +1626,13 @@ int main(int, char**)
 			if (full360 <= 0) {
 				ImGui::Text("TO USE THIS COLORBOT \nFULL360 MUST BE CONFIGURED CORRECTLY\nTHIS IS DIFFERENT FOR ALL COMPUTERS\n\nTHE OPTIMAL SPEED I FOUND OUT TO BE AROUND 0.2\nSO IMO, ONLY CHANGE FULL360\n(FULL360 SHOULD BE AROUND 5000-25000)");
 			}
+			
+
+			if (ImGui::Button( IsConsoleVisible ? "Hide Console" : "View Console"))
+			{
+				ConsoleVisSwitch();
+			}
+			ImGui::SameLine();
 			ImGui::Checkbox("Debug", &isDebugging);
 
 			if (isDebugging)
