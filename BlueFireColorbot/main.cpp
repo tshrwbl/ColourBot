@@ -20,11 +20,15 @@
 #include <thread>
 #include "interception.h"
 #include <string>
+#include "pch.h"
+#include "SimpleCapture.h"
+
 
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
-#define PROCESS_NAME L"VALORANT  " 
-//#define PROCESS_NAME L"Untitled - Paint" 
+//#define PROCESS_NAME L"VALORANT  " 
+//#define PROCESS_NAME L"AssaultCube" 
+#define PROCESS_NAME L"Untitled - Paint" 
 
 #define NAMEOF(name) #name
 #define DEBUGDIR L"Test"
@@ -71,6 +75,7 @@ struct Vector2 {
 	}
 };
 
+bool isCheckingTurnedOn = false;
 bool flickAim = false;
 bool recoilControl = false;
 bool overloadManualInputs = false;
@@ -167,7 +172,7 @@ static const int holdKeysCodes[hold_arry_size]{
    VK_RCONTROL,
 };
 
-void GetImageForDebuggingNew(BYTE* data, int h, int w);
+//void GetImageForDebuggingNew(BYTE* data, int h, int w);
 
 
 // Data
@@ -437,6 +442,59 @@ void UpdateColorChecks(int counter)
 	}
 }
 
+// Graphics capture -- Start
+winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice m_device{ nullptr };
+std::unique_ptr<SimpleCapture> m_capture{ nullptr };
+
+void InitializeGrpCap()
+{
+	//auto queue = DispatcherQueue::GetForCurrentThread();
+	//m_compositor = root.Compositor();
+	//m_root = m_compositor.CreateContainerVisual();
+	//m_content = m_compositor.CreateSpriteVisual();
+	//m_brush = m_compositor.CreateSurfaceBrush();
+
+	//m_root.RelativeSizeAdjustment({ 1, 1 });
+	//root.Children().InsertAtTop(m_root);
+
+	//m_content.AnchorPoint({ 0.5f, 0.5f });
+	//m_content.RelativeOffsetAdjustment({ 0.5f, 0.5f, 0 });
+	//m_content.RelativeSizeAdjustment({ 1, 1 });
+	//m_content.Size({ -80, -80 });
+	//m_content.Brush(m_brush);
+	//m_brush.HorizontalAlignmentRatio(0.5f);
+	//m_brush.VerticalAlignmentRatio(0.5f);
+	//m_brush.Stretch(CompositionStretch::Uniform);
+	//auto shadow = m_compositor.CreateDropShadow();
+	//shadow.Mask(m_brush);
+	//m_content.Shadow(shadow);
+	//m_root.Children().InsertAtTop(m_content);
+
+	auto d3dDevice = CreateD3DDevice();
+	auto dxgiDevice = d3dDevice.as<IDXGIDevice>();
+	m_device = CreateDirect3DDevice(dxgiDevice.get());
+}
+
+void StartCaptureOfWnd(HWND hwnd)
+{
+	if (m_capture)
+	{
+		m_capture->Close();
+		m_capture = nullptr;
+	}
+
+	auto item = CreateCaptureItemForWindow(hwnd);
+
+	m_capture = std::make_unique<SimpleCapture>(m_device, item , currentSortingMethod);
+
+	//auto surface = m_capture->CreateSurface(m_compositor);
+	//m_brush.Surface(surface);
+
+	m_capture->StartCapture();
+}
+
+// Graphics capture -- END
+
 bool FirstColorSorting(char* data, int height, int width) {
 	int hWidth = width / 2;
 	int hHeight = height / 2;
@@ -457,7 +515,7 @@ bool FirstColorSorting(char* data, int height, int width) {
 
 int counter = 0;
 void GetImageForDebugging(char* data, int height, int width) {
-	return;
+	//return;
 	int hWidth = width / 2;
 	int hHeight = height / 2;
 	//save ofstream file in debug folder
@@ -637,6 +695,12 @@ bool SingleTargetPrioritySorting(char* data, int height, int width) {
 
 
 bool CustomPrioritySorting(char* data, int height, int width) {
+	if (!isCheckingTurnedOn)
+		return false;
+
+	if (isDebugging && saveDebugImages)
+		GetImageForDebugging( data,  height, width);
+
 	const int maxCount = 5;
 	const int forSize = 100;
 
@@ -712,244 +776,244 @@ bool CustomPrioritySorting(char* data, int height, int width) {
 }
 
 
-bool InitColor() {
-	// ==== FIND WINDOW ==== 
-	RECT rect;
-	game_window = FindWindowW(NULL, PROCESS_NAME);
-	//game_window = GetDesktopWindow();
-
-	GetClientRect(game_window, &rect);
-
-	// ==== SCALING FACTOR ====
-	HDC monitor = GetDC(game_window); // GetDC(NULL);
-
-	int current = GetDeviceCaps(monitor, VERTRES);
-	int total = GetDeviceCaps(monitor, DESKTOPVERTRES);
-
-	width = (rect.right - rect.left) * total / current;
-	height = (rect.bottom - rect.top) * total / current;
-
-	// ==== CREATE DEVICE ==== 
-
-	HRESULT hr(E_FAIL);
-	D3D_FEATURE_LEVEL lFeatureLevel;
-
-	for (UINT DriverTypeIndex = 0; DriverTypeIndex < gNumDriverTypes; ++DriverTypeIndex)
-	{
-		hr = D3D11CreateDevice(
-			nullptr,
-			gDriverTypes[DriverTypeIndex],
-			nullptr,
-			0,
-			gFeatureLevels,
-			gNumFeatureLevels,
-			D3D11_SDK_VERSION,
-			&lDevice,
-			&lFeatureLevel,
-			&lImmediateContext);
-
-		if (SUCCEEDED(hr))
-		{
-			// Device creation success, no need to loop anymore
-			break;
-		}
-
-		lDevice.Reset();
-
-		lImmediateContext.Reset();
-	}
-
-	// ==== CREATE TEXTURE ====
-
-	desc.Width = width;
-	desc.Height = height;
-	desc.ArraySize = 1;
-	desc.MipLevels = 1;
-
-	desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-	desc.SampleDesc.Count = 1;
-	desc.SampleDesc.Quality = 0;
-
-	desc.Usage = D3D11_USAGE_DEFAULT;
-
-	desc.BindFlags = 40;
-	desc.MiscFlags = D3D11_RESOURCE_MISC_GDI_COMPATIBLE;
-	desc.CPUAccessFlags = 0;
-
-	hr = lDevice->CreateTexture2D(&desc, NULL, &texture);
-
-	if (FAILED(hr)) {
-		cout << "Failed to create texture" << endl;
-		return false;
-	}
-
-	hr = texture->QueryInterface(__uuidof(IDXGISurface1), (void**)&gdiSurface);
-
-	if (FAILED(hr)) {
-		cout << "Failed to create GDI surface" << endl;
-		return false;
-	}
-
-	// REUSE desc FOR FRAMECOPY
-	desc.BindFlags = 0;
-	desc.MiscFlags &= D3D11_RESOURCE_MISC_TEXTURECUBE;
-	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-	desc.Usage = D3D11_USAGE_STAGING;
-	InitMoveMouse();
-	cout << "Starting at " << width << "x" << height << endl;
-
-	return true;
-}
-HDC hdc_target;
-
-bool ScreenGrab() {
-
-	//For debugging 
-	unsigned short last_r = 0;
-	unsigned short last_g = 0;
-	unsigned short last_b = 0;
-	std::chrono::high_resolution_clock::time_point start;
-	if (isDebugging)
-		start = std::chrono::high_resolution_clock::now();
-
-
-	// ==== SCEENGRAB ==== 
-
-	HDC hDC = nullptr;
-	gdiSurface->GetDC(true, &hDC);
-	hdc_target = GetDC(game_window);
-
-	// === THE COPY TEXTURE ===
-	while (!BitBlt(hDC, 0, 0, width, height, hdc_target, 0, 0, SRCCOPY)) {
-		cout << "FAILED" << endl;
-		Sleep(1000);
-	}
-
-	// VERY IMPORTANT TO RELEASE BEFORE COPY
-	ReleaseDC(NULL, hdc_target);
-	gdiSurface->ReleaseDC(nullptr);
-
-	// === COPY TO CPU ===
-	D3D11_MAPPED_SUBRESOURCE tempsubsource;
-	ID3D11Texture2D* pFrameCopy = nullptr;
-	HRESULT hr = lDevice->CreateTexture2D(&desc, nullptr, &pFrameCopy);
-	if (FAILED(hr)) {
-		return false;
-	}
-
-	lImmediateContext->CopyResource(pFrameCopy, texture.Get());
-
-	hr = lImmediateContext->Map(pFrameCopy, 0, D3D11_MAP_READ, 0, &tempsubsource);
-	void* d = tempsubsource.pData;
-	char* data = reinterpret_cast<char*>(d);
-
-	if (FAILED(hr)) {
-		return false;
-	}
-
-	if (!currentSortingMethod(data, desc.Height, desc.Width) && flickAim)
-	{
-		trueX = maxX;
-		trueY = maxY;
-	}
-
-
-	if (pFrameCopy != nullptr) {
-		lImmediateContext->Unmap(pFrameCopy, 0);
-
-		pFrameCopy->Release();
-		lImmediateContext->Flush();
-	}
-
-	// TESTING FRAME UPDATE, REMOVE THIS
-	if (isDebugging)
-	{
-		int base = (100 + 100 * desc.Width) * 4;
-		unsigned short red = data[base + 2];
-		unsigned short green = data[base + 1];
-		unsigned short blue = data[base];
-		if ((last_b != blue || last_g != green || last_r != red) && (red > 0 && blue > 0 && green > 0)) {
-			auto finish = std::chrono::high_resolution_clock::now();
-			std::chrono::duration<double> elapsed = finish - start;
-			cout << "Time: " << (elapsed.count() * 1000) << "ms" << endl;
-			//logging::INFO(  "Time: " + std::to_string((elapsed.count() * 1000)));
-			start = std::chrono::high_resolution_clock::now();
-			last_b = blue;
-			last_g = green;
-			last_r = red;
-		}
-		GetImageForDebugging(data, desc.Height, desc.Width);
-	}
-	return true;
-}
+//bool InitColor() {
+//	// ==== FIND WINDOW ==== 
+//	RECT rect;
+//	game_window = FindWindowW(NULL, PROCESS_NAME);
+//	//game_window = GetDesktopWindow();
+//
+//	GetClientRect(game_window, &rect);
+//
+//	// ==== SCALING FACTOR ====
+//	HDC monitor = GetDC(game_window); // GetDC(NULL);
+//
+//	int current = GetDeviceCaps(monitor, VERTRES);
+//	int total = GetDeviceCaps(monitor, DESKTOPVERTRES);
+//
+//	width = (rect.right - rect.left) * total / current;
+//	height = (rect.bottom - rect.top) * total / current;
+//
+//	// ==== CREATE DEVICE ==== 
+//
+//	HRESULT hr(E_FAIL);
+//	D3D_FEATURE_LEVEL lFeatureLevel;
+//
+//	for (UINT DriverTypeIndex = 0; DriverTypeIndex < gNumDriverTypes; ++DriverTypeIndex)
+//	{
+//		hr = D3D11CreateDevice(
+//			nullptr,
+//			gDriverTypes[DriverTypeIndex],
+//			nullptr,
+//			0,
+//			gFeatureLevels,
+//			gNumFeatureLevels,
+//			D3D11_SDK_VERSION,
+//			&lDevice,
+//			&lFeatureLevel,
+//			&lImmediateContext);
+//
+//		if (SUCCEEDED(hr))
+//		{
+//			// Device creation success, no need to loop anymore
+//			break;
+//		}
+//
+//		lDevice.Reset();
+//
+//		lImmediateContext.Reset();
+//	}
+//
+//	// ==== CREATE TEXTURE ====
+//
+//	desc.Width = width;
+//	desc.Height = height;
+//	desc.ArraySize = 1;
+//	desc.MipLevels = 1;
+//
+//	desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+//	desc.SampleDesc.Count = 1;
+//	desc.SampleDesc.Quality = 0;
+//
+//	desc.Usage = D3D11_USAGE_DEFAULT;
+//
+//	desc.BindFlags = 40;
+//	desc.MiscFlags = D3D11_RESOURCE_MISC_GDI_COMPATIBLE;
+//	desc.CPUAccessFlags = 0;
+//
+//	hr = lDevice->CreateTexture2D(&desc, NULL, &texture);
+//
+//	if (FAILED(hr)) {
+//		cout << "Failed to create texture" << endl;
+//		return false;
+//	}
+//
+//	hr = texture->QueryInterface(__uuidof(IDXGISurface1), (void**)&gdiSurface);
+//
+//	if (FAILED(hr)) {
+//		cout << "Failed to create GDI surface" << endl;
+//		return false;
+//	}
+//
+//	// REUSE desc FOR FRAMECOPY
+//	desc.BindFlags = 0;
+//	desc.MiscFlags &= D3D11_RESOURCE_MISC_TEXTURECUBE;
+//	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+//	desc.Usage = D3D11_USAGE_STAGING;
+//	InitMoveMouse();
+//	cout << "Starting at " << width << "x" << height << endl;
+//
+//	return true;
+//}
+//HDC hdc_target;
+//
+//bool ScreenGrab() {
+//
+//	//For debugging 
+//	unsigned short last_r = 0;
+//	unsigned short last_g = 0;
+//	unsigned short last_b = 0;
+//	std::chrono::high_resolution_clock::time_point start;
+//	if (isDebugging)
+//		start = std::chrono::high_resolution_clock::now();
+//
+//
+//	// ==== SCEENGRAB ==== 
+//
+//	HDC hDC = nullptr;
+//	gdiSurface->GetDC(true, &hDC);
+//	hdc_target = GetDC(game_window);
+//
+//	// === THE COPY TEXTURE ===
+//	while (!BitBlt(hDC, 0, 0, width, height, hdc_target, 0, 0, SRCCOPY)) {
+//		cout << "FAILED" << endl;
+//		Sleep(1000);
+//	}
+//
+//	// VERY IMPORTANT TO RELEASE BEFORE COPY
+//	ReleaseDC(NULL, hdc_target);
+//	gdiSurface->ReleaseDC(nullptr);
+//
+//	// === COPY TO CPU ===
+//	D3D11_MAPPED_SUBRESOURCE tempsubsource;
+//	ID3D11Texture2D* pFrameCopy = nullptr;
+//	HRESULT hr = lDevice->CreateTexture2D(&desc, nullptr, &pFrameCopy);
+//	if (FAILED(hr)) {
+//		return false;
+//	}
+//
+//	lImmediateContext->CopyResource(pFrameCopy, texture.Get());
+//
+//	hr = lImmediateContext->Map(pFrameCopy, 0, D3D11_MAP_READ, 0, &tempsubsource);
+//	void* d = tempsubsource.pData;
+//	char* data = reinterpret_cast<char*>(d);
+//
+//	if (FAILED(hr)) {
+//		return false;
+//	}
+//
+//	if (!currentSortingMethod(data, desc.Height, desc.Width) && flickAim)
+//	{
+//		trueX = maxX;
+//		trueY = maxY;
+//	}
+//
+//
+//	if (pFrameCopy != nullptr) {
+//		lImmediateContext->Unmap(pFrameCopy, 0);
+//
+//		pFrameCopy->Release();
+//		lImmediateContext->Flush();
+//	}
+//
+//	// TESTING FRAME UPDATE, REMOVE THIS
+//	if (isDebugging)
+//	{
+//		int base = (100 + 100 * desc.Width) * 4;
+//		unsigned short red = data[base + 2];
+//		unsigned short green = data[base + 1];
+//		unsigned short blue = data[base];
+//		if ((last_b != blue || last_g != green || last_r != red) && (red > 0 && blue > 0 && green > 0)) {
+//			auto finish = std::chrono::high_resolution_clock::now();
+//			std::chrono::duration<double> elapsed = finish - start;
+//			cout << "Time: " << (elapsed.count() * 1000) << "ms" << endl;
+//			//logging::INFO(  "Time: " + std::to_string((elapsed.count() * 1000)));
+//			start = std::chrono::high_resolution_clock::now();
+//			last_b = blue;
+//			last_g = green;
+//			last_r = red;
+//		}
+//		GetImageForDebugging(data, desc.Height, desc.Width);
+//	}
+//	return true;
+//}
 
 bool isRunning = false;
 bool isReallyRunning = false;
 
-BYTE* screenData = 0;
-BITMAPINFOHEADER bmi;
-HDC hScreen;
-HBITMAP hBitmap;
-HDC hDC;
-
-void ScreenGrabModified() {
-
-	//auto t_start = std::chrono::high_resolution_clock::now();
-	//auto t_end = std::chrono::high_resolution_clock::now();
-
-	//while (run_threads) {
-	//Sleep(6);
-
-	int w = maxX * 2;
-	int h = maxY * 2;
-
-	Vector2 middle_screen(width / 2, height / 2);
-	HGDIOBJ old_obj = SelectObject(hDC, hBitmap);
-	BOOL bRet = BitBlt(hDC, 0, 0, trueX * 2, trueY * 2, hScreen, middle_screen.x - (w / 2), middle_screen.y - (h / 2), SRCCOPY);
-	SelectObject(hDC, old_obj);
-	GetDIBits(hDC, hBitmap, 0, h, screenData, (BITMAPINFO*)&bmi, DIB_RGB_COLORS);
-
-
-	if (lmbTrigger)
-	{
-		CheckForTrg(screenData, h, w);
-	}
-	else if (!NewSortingMethod(screenData, h, w) && flickAim)
-	{
-		trueX = maxX;
-		trueY = maxY;
-	}
-
-	/*if (trigger)
-	{
-		CheckForTrigger(screenData);
-	}*/
-
-	if (saveDebugImages)
-	{
-		GetImageForDebuggingNew(screenData, h, w);
-	}
-	//}
-}
-
-void ScreenGrabModifiedInitialize() {
-	int w = maxX * 2;
-	int h = maxY * 2;
-	hScreen = GetDC(NULL);
-	hBitmap = CreateCompatibleBitmap(hScreen, w, h);
-	screenData = (BYTE*)malloc(5 * width * height);
-	hDC = CreateCompatibleDC(hScreen);
-	//point middle_screen(width / 2, height / 2);
-
-	bmi = { 0 };
-	bmi.biSize = sizeof(BITMAPINFOHEADER);
-	bmi.biPlanes = 1;
-	bmi.biBitCount = 32;
-	bmi.biWidth = w;
-	bmi.biHeight = -h;
-	bmi.biCompression = BI_RGB;
-	bmi.biSizeImage = 0;
-}
+//BYTE* screenData = 0;
+//BITMAPINFOHEADER bmi;
+//HDC hScreen;
+//HBITMAP hBitmap;
+//HDC hDC;
+//
+//void ScreenGrabModified() {
+//
+//	//auto t_start = std::chrono::high_resolution_clock::now();
+//	//auto t_end = std::chrono::high_resolution_clock::now();
+//
+//	//while (run_threads) {
+//	//Sleep(6);
+//
+//	int w = maxX * 2;
+//	int h = maxY * 2;
+//
+//	Vector2 middle_screen(width / 2, height / 2);
+//	HGDIOBJ old_obj = SelectObject(hDC, hBitmap);
+//	BOOL bRet = BitBlt(hDC, 0, 0, trueX * 2, trueY * 2, hScreen, middle_screen.x - (w / 2), middle_screen.y - (h / 2), SRCCOPY);
+//	SelectObject(hDC, old_obj);
+//	GetDIBits(hDC, hBitmap, 0, h, screenData, (BITMAPINFO*)&bmi, DIB_RGB_COLORS);
+//
+//
+//	if (lmbTrigger)
+//	{
+//		CheckForTrg(screenData, h, w);
+//	}
+//	else if (!NewSortingMethod(screenData, h, w) && flickAim)
+//	{
+//		trueX = maxX;
+//		trueY = maxY;
+//	}
+//
+//	/*if (trigger)
+//	{
+//		CheckForTrigger(screenData);
+//	}*/
+//
+//	if (saveDebugImages)
+//	{
+//		GetImageForDebuggingNew(screenData, h, w);
+//	}
+//	//}
+//}
+//
+//void ScreenGrabModifiedInitialize() {
+//	int w = maxX * 2;
+//	int h = maxY * 2;
+//	hScreen = GetDC(NULL);
+//	hBitmap = CreateCompatibleBitmap(hScreen, w, h);
+//	screenData = (BYTE*)malloc(5 * width * height);
+//	hDC = CreateCompatibleDC(hScreen);
+//	//point middle_screen(width / 2, height / 2);
+//
+//	bmi = { 0 };
+//	bmi.biSize = sizeof(BITMAPINFOHEADER);
+//	bmi.biPlanes = 1;
+//	bmi.biBitCount = 32;
+//	bmi.biWidth = w;
+//	bmi.biHeight = -h;
+//	bmi.biCompression = BI_RGB;
+//	bmi.biSizeImage = 0;
+//}
 
 
 void ScreenGrabMain() {
@@ -969,12 +1033,14 @@ void ScreenGrabMain() {
 				lmbTrigger = false;
 				//isReallyRunning = shouldRun;
 				if (testFull360) {
+					isCheckingTurnedOn = false;
 					MoveMouse(full360, 0);
 					Sleep(1000);
 				}
 				else {
 					//ScreenGrab();
-					ScreenGrabModified();
+					//ScreenGrabModified();
+					isCheckingTurnedOn = true;
 				}
 			}
 			else {
@@ -982,10 +1048,12 @@ void ScreenGrabMain() {
 				if (lmbTrigger)
 				{
 					//ScreenGrab();
-					ScreenGrabModified();
+					//ScreenGrabModified();
+					isCheckingTurnedOn = true;
 				}
 				else
 				{
+					isCheckingTurnedOn = false;
 					Sleep(10);
 					//if (flickAim)
 					//{
@@ -996,9 +1064,10 @@ void ScreenGrabMain() {
 						system("cls");*/
 					NotfirstRunSingleTarget = false;
 				}
-			}
+			}			
 		}
 		else {
+			isCheckingTurnedOn = false;
 			Sleep(100);
 		}
 		isReallyRunning = shouldRun;
@@ -1329,58 +1398,6 @@ bool CheckForTrigger(BYTE* data) {
 	return false;
 }
 
-int counterNew = 0;
-void GetImageForDebuggingNew(BYTE* data, int h, int w) {
-	//return;
-	int hWidth = width / 2;
-	int hHeight = height / 2;
-	//save ofstream file in debug folder
-	ofstream img("Test/debugpic" + std::to_string(counterNew) + ".ppm"); //#include <fstream>
-	ofstream img2("Test/debugpicDetectionVectors" + std::to_string(counterNew++) + ".ppm"); //#include <fstream>
-
-	img << "P3" << endl;
-	img << w  << endl;
-	img << h  << endl;
-	img << "255" << endl;
-
-	img2 << "P3" << endl;
-	img2 << w  << endl;
-	img2 << h  << endl;
-	img2 << "255" << endl;
-
-
-	for (int j = 0; j < h; ++j) {
-		for (int i = 0; i < w * 4; i += 4) {
-			unsigned short red = data[i + (j * w * 4) + 2];
-			unsigned short green = data[i + (j * w * 4) + 1];
-			unsigned short blue = data[i + (j * w * 4) + 0];
-			img << red << " " << green << " " << blue << "\n";
-			if (currentColorChecks(red, green, blue))
-				img2 << red << " " << green << " " << blue << "\n";
-			else
-				img2 << 0 << " " << 0 << " " << 0 << "\n";
-
-		}
-	}
-
-
-	//for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
-	//	for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
-	//		int base = (x + y * desc.Width) * 4;
-	//		unsigned short red = data[base + 2] & 255;
-	//		unsigned short green = data[base + 1] & 255;
-	//		unsigned short blue = data[base] & 255;
-	//		img << red << " " << green << " " << blue << "\n";
-	//		if (currentColorChecks(red, green, blue))
-	//			img2 << red << " " << green << " " << blue << "\n";
-	//		else
-	//			img2 << 0 << " " << 0 << " " << 0 << "\n";
-	//	}
-	//}
-
-	cout << counterNew << " Images saved" << endl;
-}
-
 
 bool IsConsoleVisible = true;
 void ConsoleVisSwitch()
@@ -1392,7 +1409,6 @@ void ConsoleVisSwitch()
 
 	IsConsoleVisible = !IsConsoleVisible;
 }
-
 
 // Main code
 int main(int, char**)
@@ -1412,18 +1428,23 @@ int main(int, char**)
 		cout << "Loaded Config : " << profiles[ProfileIndex] << endl;
 	}
 
-	if (!InitColor()) {
-		cin.get();
-		return -1;
-	}
-	//width = 1080;
-	//height = 1920;
-
-	//InitMoveMouse();
+	//if (!InitColor()) {
+	//	cin.get();
+	//	return -1;
+	//}
+	width = 1080;
+	height = 1920;
+	InitMoveMouse();
 	cout << "Starting at " << width << "x" << height << endl;
 
-	ScreenGrabModifiedInitialize();
+	//ScreenGrabModifiedInitialize();
+	game_window = FindWindowW(NULL, PROCESS_NAME);
 
+	if (game_window == NULL)
+	{
+		cout << "Failed to find window" << endl;
+		return 0;
+	}
 	thread t1(ScreenGrabMain);
 	t1.detach();
 
@@ -1623,6 +1644,19 @@ int main(int, char**)
 			ImGui::SameLine();
 			if (ImGui::Button(isRunning ? "Stop colorbot" : "Start colorbot")) {
 				isRunning = !isRunning;
+				if (isRunning)
+				{
+					InitializeGrpCap();
+					StartCaptureOfWnd(game_window);
+				}
+				else
+				{
+					if (m_capture)
+					{
+						m_capture->Close();
+						m_capture = nullptr;
+					}
+				}				
 			}
 			if (isRunning && isReallyRunning) {
 				ImGui::SameLine();
@@ -1681,6 +1715,12 @@ int main(int, char**)
 	::UnregisterClass(wc.lpszClassName, wc.hInstance);
 
 	//logging::INFO("Exit....");
+	if (m_capture)
+	{
+		m_capture->Close();
+		m_capture = nullptr;
+	}
+
 	return 0;
 }
 

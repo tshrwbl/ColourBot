@@ -158,6 +158,8 @@
     <ClCompile Include="imgui_tables.cpp" />
     <ClCompile Include="imgui_widgets.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="pch.cpp" />
+    <ClCompile Include="SimpleCapture.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="Icon.ico" />
@@ -168,6 +170,10 @@
     <None Include="Resource.aps" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="capture.interop.h" />
+    <ClInclude Include="composition.interop.h" />
+    <ClInclude Include="d3dHelpers.h" />
+    <ClInclude Include="direct3d11.interop.h" />
     <ClInclude Include="imconfig.h" />
     <ClInclude Include="imgui.h" />
     <ClInclude Include="imgui_impl_dx9.h" />
@@ -180,7 +186,9 @@
     <ClInclude Include="imstb_truetype.h" />
     <ClInclude Include="interception.h" />
     <ClInclude Include="main.h" />
+    <ClInclude Include="pch.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="SimpleCapture.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Resource.rc" />
