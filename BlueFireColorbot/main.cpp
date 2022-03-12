@@ -75,6 +75,7 @@ bool flickAim = false;
 bool recoilControl = false;
 bool overloadManualInputs = false;
 bool isDebugging = false;
+bool saveDebugImages = false; 
 bool NotfirstRunSingleTarget = false;
 int flickAimTime = 20;
 int snapValue = 5;
@@ -248,18 +249,22 @@ void SendInputs()
 }
 
 void MoveMouse(int dx, int dy) {
+
+	auto tempCalcY = (flickAim ? offset[1] * 2 : offset[1]) + recoilOffset;
+
 	InterceptionMouseStroke& mstroke = *(InterceptionMouseStroke*)&stroke;
 	mstroke.flags = 0;
 	mstroke.information = 0;
 	mstroke.x = dx + offset[0];
-	mstroke.y = dy + offset[1] + recoilOffset;
+	mstroke.y = dy + tempCalcY;
 
 	if (isDebugging)
 		//logging::INFO("Cords: " + dx + ',' + dy);
 		cout << "Cords: x-" << dx << "y-" << dy << endl;
 	interception_send(context, device, &stroke, 1);
 
-	if (trigger && (abs(dx) < (triggerFov + offset[0]) && abs(dy) < (triggerFov + offset[1] + recoilOffset)))
+	//if (trigger && (abs(dx) < (triggerFov + offset[0]) && abs(dy) < (triggerFov + offset[1] + recoilOffset)))
+	if (trigger && (abs(dx) < (triggerFov + offset[0]) && ( dy <= 0 && dy > -(triggerFov + tempCalcY))))
 	{
 		SendInputs();
 	}
@@ -873,7 +878,7 @@ bool ScreenGrab() {
 			last_g = green;
 			last_r = red;
 		}
-		//GetImageForDebugging(data, desc.Height, desc.Width);
+		GetImageForDebugging(data, desc.Height, desc.Width);
 	}
 	return true;
 }
@@ -920,7 +925,7 @@ void ScreenGrabModified() {
 		CheckForTrigger(screenData);
 	}*/
 
-	if (isDebugging)
+	if (saveDebugImages)
 	{
 		GetImageForDebuggingNew(screenData, h, w);
 	}
@@ -1522,9 +1527,9 @@ int main(int, char**)
 					if (!ReadConfig(ProfileIndex)) {
 						cout << "Failed to read config : " << profiles[ProfileIndex] << endl;
 					}
-					else {
-						cout << "Loaded Config : " << profiles[ProfileIndex] << endl;
-					}
+					//else {
+					//	cout << "Loaded Config : " << profiles[ProfileIndex] << endl;
+					//}
 				}
 
 				ImGui::SliderFloat("Speed", &speed, 0.0f, 1.0f);
@@ -1636,8 +1641,14 @@ int main(int, char**)
 			ImGui::Checkbox("Debug", &isDebugging);
 
 			if (isDebugging)
+			{
 				ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-
+				ImGui::Checkbox("Save Images", &saveDebugImages );
+			}
+			else
+			{
+				saveDebugImages = false;
+			}
 			ImGui::End();
 		}
 
