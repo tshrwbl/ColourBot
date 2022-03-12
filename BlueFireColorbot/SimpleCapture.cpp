@@ -31,12 +31,12 @@ using namespace Windows::UI;
 
 SimpleCapture::SimpleCapture(winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice const& device,
 	winrt::Windows::Graphics::Capture::GraphicsCaptureItem const& item,
-	ColorSortingMethod currentSortingMethodPtr
+	MotionMethods FuncPtr
 	)
 {
 	m_item = item;
 	m_device = device;
-	currentSortingMethod = currentSortingMethodPtr;
+	MotionMethodCap = FuncPtr;
 
 	// Set up 
 	auto d3dDevice = GetDXGIInterfaceFromObject<ID3D11Device>(m_device);
@@ -107,6 +107,125 @@ bool processFrameForColour(const winrt::Windows::Graphics::Capture::Direct3D11Ca
 	return true;
 }
 
+struct Vector2 {
+	int x;
+	int y;
+	Vector2(int X, int Y) {
+		x = X;
+		y = Y;
+	}
+	float Len() {
+		return sqrt(pow(x, 2) + pow(y, 2));
+	}
+	Vector2 operator+(const Vector2& a) const
+	{
+		return Vector2(a.x + x, a.y + y);
+	}
+};
+
+bool SimpleCapture::IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue) {
+	// updated PURPLE FROM https://www.unknowncheats.me/forum/valorant/437368-updated-colors-pixel-bot-act-4-a.html
+	if (green >= 170) {
+		return false;
+	}
+
+	if (green >= 120) {
+		return abs(red - blue) <= 8 &&
+			red - green >= 50 &&
+			blue - green >= 50 &&
+			red >= 105 &&
+			blue >= 105;
+	}
+
+	return abs(red - blue) <= 13 &&
+		red - green >= 60 &&
+		blue - green >= 60 &&
+		red >= 110 &&
+		blue >= 100;
+
+	//return red > 240 && green > 90 && green < 190 && blue > 240; // OLD COLOR FUNCTION
+}
+
+bool SimpleCapture::CustomPrioritySorting(char* data, int height, int width) {
+
+	const int maxCount = 5;
+	const int forSize = 100;
+	
+	int trueY = 300;
+	int trueX = 600;
+
+	std::list<Vector2> vects;
+	int hWidth = width / 2;
+	int hHeight = height / 2;
+	//Vector2 xhair = FindXhair(data, height, width);
+
+
+	for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
+		for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
+			int base = (x + y * width) * 4;
+			unsigned short red = data[base + 2] & 255;
+			unsigned short green = data[base + 1] & 255;
+			unsigned short blue = data[base] & 255;
+			if (IsPurpleColor(red, green, blue)) {
+				vects.push_back(Vector2(x - hWidth, y - hHeight));
+				/*if (recoil)
+				{
+					vects.push_back(Vector2(x - xhair.x, y - xhair.y));
+				}
+				else
+				{
+					vects.push_back(Vector2(x - hWidth, y - hHeight));
+				}*/
+			}
+		}
+	}
+
+	if (vects.size() > 0) {
+		vects.sort([](const Vector2& lhs, const Vector2& rhs) // SORT BY BIGGEST Y
+			{
+				return  lhs.y < rhs.y;
+			});
+		std::list<Vector2> forbidden;
+		for (auto& current : vects) // access by reference to avoid copying
+		{
+			bool canUpdate = true;
+			if (abs(current.x) > trueX || abs(current.y) > trueY) {
+				continue;
+			}
+			for (auto& forb : forbidden) // access by reference to avoid copying
+			{
+				if ((current + forb).Len() < forSize) {
+					canUpdate = false;
+					break;
+				}
+				if (abs(current.x + forb.x) < forSize) {
+					canUpdate = false;
+					break;
+				}
+			}
+			if (canUpdate) {
+				forbidden.push_front(current);
+				if (forbidden.size() > maxCount) {
+					break;
+				}
+			}
+		}
+		if (forbidden.size() > 0) {
+			forbidden.sort([](const Vector2& lhs, const Vector2& rhs)
+				{
+					//return sqrt(pow(lhs.x, 2) + pow(lhs.y * 10, 2)) < sqrt(pow(rhs.x, 2) + pow(rhs.y * 10, 2));
+					return (pow(lhs.x, 2) + pow(lhs.y, 2)) < (pow(rhs.x, 2) + pow(rhs.y, 2));
+				});
+			Vector2 front = forbidden.front();
+			//MoveMouseFromScreenPosition(front, height, width);
+			MotionMethodCap(front.x , front.y);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 
 int SaveImageDataCounter = 0;
 void SaveImageData(char* data, int height, int width) {
@@ -116,7 +235,7 @@ void SaveImageData(char* data, int height, int width) {
 	int hWidth = width / 2;
 	int hHeight = height / 2;
 	//save ofstream file in debug folder
-	std::ofstream img(std::to_string(SaveImageDataCounter) + ".ppm"); //#include <fstream>
+	std::ofstream img("Test/debugpicNewFor" + std::to_string(SaveImageDataCounter) + ".ppm"); //#include <fstream>
 	//ofstream img2("Test/debugpicDetectionVectors" + std::to_string(counter++) + ".ppm"); //#include <fstream>
 
 	img << "P3" << std::endl;
@@ -222,7 +341,7 @@ bool processFrameForColourGitMethod(const winrt::Windows::Graphics::Capture::Dir
 			// Frame data is here??
 
 
-	currentSortingMethod(data, height, width);
+	//currentSortingMethod(data, height, width);
 	d3dContext->Unmap(stagingTexture, 0);
 	d3dContext->Unmap(surfaceTexture.get(), 0);
 	//d3dContext->Flush();
@@ -358,144 +477,82 @@ void SimpleCapture::OnFrameArrived(
 	Direct3D11CaptureFramePool const& sender,
 	winrt::Windows::Foundation::IInspectable const&)
 {
-	//auto newSize = false;
+	auto frame = sender.TryGetNextFrame();
 
-	{
-		auto frame = sender.TryGetNextFrame();
-		auto frameContentSize = frame.ContentSize();
+	winrt::com_ptr<ID3D11Texture2D> backBuffer;
+	winrt::check_hresult(m_swapChain->GetBuffer(0, winrt::guid_of<ID3D11Texture2D>(), backBuffer.put_void()));
+	auto surfaceTexture = GetDXGIInterfaceFromObject<ID3D11Texture2D>(frame.Surface());
 
-		//     if (frameContentSize.Width != m_lastSize.Width ||
-				 //frameContentSize.Height != m_lastSize.Height)
-		//     {
-		//         // The thing we have been capturing has changed size.
-		//         // We need to resize our swap chain first, then blit the pixels.
-		//         // After we do that, retire the frame and then recreate our frame pool.
-		//         newSize = true;
-		//         m_lastSize = frameContentSize;
-		//         m_swapChain->ResizeBuffers(
-		//             2, 
-				 //	static_cast<uint32_t>(m_lastSize.Width),
-				 //	static_cast<uint32_t>(m_lastSize.Height),
-		//             static_cast<DXGI_FORMAT>(DirectXPixelFormat::B8G8R8A8UIntNormalized), 
-		//             0);
-		//     }
+	/* Prepare for accessing data bits */
+	// Get the device context
+	ID3D11Device* d3dDevice;
+	surfaceTexture->GetDevice(&d3dDevice);
+	ID3D11DeviceContext* d3dContext;
+	d3dDevice->GetImmediateContext(&d3dContext);
 
-		//processFrameForColourGitMethod(frame , frameContentSize.Height, frameContentSize.Width);
-		auto surfaceTexture = GetDXGIInterfaceFromObject<ID3D11Texture2D>(frame.Surface());
-		com_ptr<ID3D11Texture2D> backBuffer;
-		check_hresult(m_swapChain->GetBuffer(0, guid_of<ID3D11Texture2D>(), backBuffer.put_void()));
-		
-		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		winrt::check_hresult(d3dContext->Map(bitmap.get(), 0, D3D11_MAP_READ, 0, &mapped));
-
-		std::vector<byte> bits(desc.Width * desc.Height * bytesPerPixel, 0);
-		auto source = reinterpret_cast<byte*>(mapped.pData);
-		auto dest = bits.data();
-		for (auto i = 0; i < (int)desc.Height; i++)
-		{
-			memcpy(dest, source, desc.Width * bytesPerPixel);
-
-			source += mapped.RowPitch;
-			dest += desc.Width * bytesPerPixel;
-		}
-		d3dContext->Unmap(bitmap.get(), 0);
-
-		////m_d3dContext->CopyResource(backBuffer.get(), surfaceTexture.get());
-
-		//if (firstRun)
-		//{
-		//	/* Prepare for accessing data bits */
-		//	// Get the device context
-		//	surfaceTexture->GetDevice(&d3dDevice);
-		//	d3dDevice->GetImmediateContext(&d3dContext);
-
-		//	// map the texture
-		//	mapInfo.RowPitch;
-		//	HRESULT hr = d3dContext->Map(
-		//		surfaceTexture.get(),
-		//		0,  // Subresource
-		//		D3D11_MAP_READ,
-		//		0,  // MapFlags
-		//		&mapInfo);
+	// map the texture
+	D3D11_MAPPED_SUBRESOURCE mapInfo;
+	mapInfo.RowPitch;
+	HRESULT hr = d3dContext->Map(
+		surfaceTexture.get(),
+		0,  // Subresource
+		D3D11_MAP_READ,
+		0,  // MapFlags
+		&mapInfo);
 
 
-		//	surfaceTexture->GetDesc(&descr);
+	D3D11_TEXTURE2D_DESC desc;
+	surfaceTexture->GetDesc(&desc);
 
-		//	descr2.Width = descr.Width;
-		//	descr2.Height = descr.Height;
-		//	descr2.MipLevels = descr.MipLevels;
-		//	descr2.ArraySize = descr.ArraySize;
-		//	descr2.Format = descr.Format;
-		//	descr2.SampleDesc = descr.SampleDesc;
-		//	descr2.Usage = D3D11_USAGE_STAGING;
-		//	descr2.BindFlags = 0;
-		//	descr2.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-		//	descr2.MiscFlags = 0;
-
-
-		//	hr = d3dDevice->CreateTexture2D(&descr2, nullptr, &stagingTexture);
-		//	if (FAILED(hr)) {
-		//		// throw std::invalid_argument("received negative value");
-		//		//std::cout << "Failed to create staging texture";
-		//		return;
-		//	}
-
-		//	// copy the texture to a staging resource
-		//	d3dContext->CopyResource(stagingTexture, surfaceTexture.get());
-
-		//	// now, map the staging resource
-		//	hr = d3dContext->Map(stagingTexture, 0, D3D11_MAP_READ, 0, &mapInfo);
-		//	if (FAILED(hr)) {
-		//		// throw std::invalid_argument("received negative value");
-		//		//std::cout << "Failed to map staging texture";
-		//		return;
-		//	}
-
-		//	//firstRun = false;
-		//}
-		//else
-		//{
-		//	surfaceTexture->GetDevice(&d3dDevice);
-		//	d3dDevice->GetImmediateContext(&d3dContext);
-
-		//	HRESULT hr = d3dContext->Map(
-		//		surfaceTexture.get(),
-		//		0,  // Subresource
-		//		D3D11_MAP_READ,
-		//		0,  // MapFlags
-		//		&mapInfo);
-
-		//	hr = d3dDevice->CreateTexture2D(&descr2, nullptr, &stagingTexture);
-		//	if (FAILED(hr)) {		
-		//		return;
-		//	}
+	D3D11_TEXTURE2D_DESC desc2;
+	desc2.Width = desc.Width;
+	desc2.Height = desc.Height;
+	desc2.MipLevels = desc.MipLevels;
+	desc2.ArraySize = desc.ArraySize;
+	desc2.Format = desc.Format;
+	desc2.SampleDesc = desc.SampleDesc;
+	desc2.Usage = D3D11_USAGE_STAGING;
+	desc2.BindFlags = 0;
+	desc2.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	desc2.MiscFlags = 0;
 
 
-
-		//	d3dContext->CopyResource(stagingTexture, surfaceTexture.get());
-		//	hr = d3dContext->Map(stagingTexture, 0, D3D11_MAP_READ, 0, &mapInfo);
-
-		//	if (FAILED(hr)) {
-		//		// throw std::invalid_argument("received negative value");
-		//		//std::cout << "Failed to map staging texture";
-		//		return;
-		//	}
-		//}
-
-	
+	ID3D11Texture2D* stagingTexture = NULL;
+	hr = d3dDevice->CreateTexture2D(&desc2, nullptr, &stagingTexture);
+	if (FAILED(hr)) {
+		// throw std::invalid_argument("received negative value");
+		//std::cout << "Failed to create staging texture";
+		return;
 	}
 
-	/*DXGI_PRESENT_PARAMETERS presentParameters = { 0 };
-	m_swapChain->Present1(1, 0, &presentParameters);*/
+	// copy the texture to a staging resource
+	d3dContext->CopyResource(stagingTexture, surfaceTexture.get());
 
-	//if (newSize)
-	//{
-	//    m_framePool.Recreate(
-	//        m_device,
-	//        DirectXPixelFormat::B8G8R8A8UIntNormalized,
-	//        2,
-	//        m_lastSize);
-	//}
+	// now, map the staging resource
+	hr = d3dContext->Map(stagingTexture, 0, D3D11_MAP_READ, 0, &mapInfo);
+
+	if (FAILED(hr)) {
+		// throw std::invalid_argument("received negative value");
+		//std::cout << "Failed to map staging texture";
+		return;
+	}
+
+	// Frame data is here??
+	void* d = mapInfo.pData;
+	char* data = reinterpret_cast<char*>(d);
+	
+	//SaveImageData(data, desc.Height, desc.Width);
+	CustomPrioritySorting(data, desc.Height, desc.Width);
+	
+	d3dContext->Unmap(stagingTexture, 0);
+	d3dContext->Unmap(surfaceTexture.get(), 0);
+	//d3dContext->Flush();
+
+	if (stagingTexture != nullptr)
+	{
+		stagingTexture->Release();
+		stagingTexture = nullptr;
+	}
 }
 
 

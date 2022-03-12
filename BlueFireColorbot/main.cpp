@@ -26,9 +26,9 @@
 
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
-//#define PROCESS_NAME L"VALORANT  " 
+#define PROCESS_NAME L"VALORANT  " 
 //#define PROCESS_NAME L"AssaultCube" 
-#define PROCESS_NAME L"Untitled - Paint" 
+//#define PROCESS_NAME L"Untitled - Paint" 
 
 #define NAMEOF(name) #name
 #define DEBUGDIR L"Test"
@@ -275,6 +275,10 @@ void MoveMouse(int dx, int dy) {
 	}
 }
 
+//typedef bool(*MotionMethods)( int, int);
+//MotionMethods CurrentMotionMethod;
+
+
 typedef bool(*ColorSortingMethod)(char*, int, int);
 ColorSortingMethod currentSortingMethod;
 
@@ -374,6 +378,20 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 			MoveMouse(moveX * speed, moveY * speed);
 	}
 }
+
+
+bool MoveDirectionRec(int x, int y)
+{
+	if (isCheckingTurnedOn)
+	{
+		auto vectMove = Vector2(x, y);
+		MoveMouseFromScreenPosition(vectMove, height, width);
+		return true;
+	}
+	else
+		return false;
+}
+
 typedef bool(*ColorChecks)(unsigned short , unsigned short , unsigned short );
 ColorChecks currentColorChecks;
 
@@ -475,6 +493,9 @@ void InitializeGrpCap()
 	m_device = CreateDirect3DDevice(dxgiDevice.get());
 }
 
+int AimX = 0;
+int AimY = 0;
+
 void StartCaptureOfWnd(HWND hwnd)
 {
 	if (m_capture)
@@ -485,7 +506,7 @@ void StartCaptureOfWnd(HWND hwnd)
 
 	auto item = CreateCaptureItemForWindow(hwnd);
 
-	m_capture = std::make_unique<SimpleCapture>(m_device, item , currentSortingMethod);
+	m_capture = std::make_unique<SimpleCapture>(m_device, item , MoveDirectionRec);
 
 	//auto surface = m_capture->CreateSurface(m_compositor);
 	//m_brush.Surface(surface);
@@ -1041,6 +1062,7 @@ void ScreenGrabMain() {
 					//ScreenGrab();
 					//ScreenGrabModified();
 					isCheckingTurnedOn = true;
+					
 				}
 			}
 			else {

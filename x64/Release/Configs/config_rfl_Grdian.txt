@@ -1,10 +1,10 @@
-speed=0.305
+speed=0.504
 maxX=557
 maxY=215
 offsetX=0
 offsetY=2
 snapValue=5
-modeSwitchingEnable=0
+modeSwitchingEnable=1
 flickAim=0
 flickAimTime=20
 full360=6429

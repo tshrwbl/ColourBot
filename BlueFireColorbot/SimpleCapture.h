@@ -2,19 +2,24 @@
 
 class SimpleCapture
 {
-    typedef bool(*ColorSortingMethod)(char*, int, int);
+    typedef bool(*MotionMethods)(int, int);
+
 public:
     SimpleCapture(
         winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice const& device,
         winrt::Windows::Graphics::Capture::GraphicsCaptureItem const& item,
-        ColorSortingMethod currentSortingMethod);
+        MotionMethods MotionMethodd);
     ~SimpleCapture() { Close(); }
 
     void StartCapture();
     winrt::Windows::UI::Composition::ICompositionSurface CreateSurface(
         winrt::Windows::UI::Composition::Compositor const& compositor);
 
+    bool CustomPrioritySorting(char* data, int height, int width);
+    bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue);
+
     void Close();
+
 
 private:
     void OnFrameArrived(
@@ -41,5 +46,6 @@ private:
 
     std::atomic<bool> m_closed = false;
 	winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool::FrameArrived_revoker m_frameArrived; 
-    ColorSortingMethod currentSortingMethod;
+    MotionMethods MotionMethodCap;
+
 };
