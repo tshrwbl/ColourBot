@@ -1,0 +1,20 @@
+speed=0.504
+maxX=557
+maxY=215
+offsetX=0
+offsetY=2
+snapValue=5
+modeSwitchingEnable=1
+flickAim=0
+flickAimTime=20
+full360=6429
+sortingCounter=0
+recoilControl=0
+overloadManualInputs=0
+trigger=1
+triggerFov=3
+trgUpdateSpeed=0
+#All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+holdKey=4
+isHold=1
+invertHold=0
