@@ -1066,7 +1066,7 @@ void ScreenGrabMain() {
 				}
 			}
 			else {
-				lmbTrigger = (GetKeyState(VK_RBUTTON) & 0x8000);
+				//lmbTrigger = (GetKeyState(VK_RBUTTON) & 0x8000);
 				if (lmbTrigger)
 				{
 					//ScreenGrab();

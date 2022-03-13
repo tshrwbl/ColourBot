@@ -15,6 +15,7 @@
 #include "pch.h"
 #include "SimpleCapture.h"
 #include <fstream>
+#include <iostream>
 //#include <windows.graphics.directx.direct3d11.interop.h>
 
 using namespace winrt;
@@ -472,11 +473,13 @@ D3D11_TEXTURE2D_DESC descr2;
 //ID3D11Texture2D* stagingTexture = NULL;
 ID3D11Texture2D* stagingTexture = NULL;
 
+std::chrono::high_resolution_clock::time_point start;
 
 void SimpleCapture::OnFrameArrived(
 	Direct3D11CaptureFramePool const& sender,
 	winrt::Windows::Foundation::IInspectable const&)
-{
+{	
+
 	auto frame = sender.TryGetNextFrame();
 
 	winrt::com_ptr<ID3D11Texture2D> backBuffer;
@@ -546,13 +549,19 @@ void SimpleCapture::OnFrameArrived(
 	
 	d3dContext->Unmap(stagingTexture, 0);
 	d3dContext->Unmap(surfaceTexture.get(), 0);
-	//d3dContext->Flush();
+	d3dContext->Flush();
 
 	if (stagingTexture != nullptr)
 	{
 		stagingTexture->Release();
 		stagingTexture = nullptr;
 	}
+
+	/*auto finish = std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double> elapsed = finish - start;
+	std::cout << "Time: " << (elapsed.count() * 1000) << "ms" << std::endl;
+	start = std::chrono::high_resolution_clock::now();*/
+
 }
 
 
