@@ -75,7 +75,7 @@ bool flickAim = false;
 bool recoilControl = false;
 bool overloadManualInputs = false;
 bool isDebugging = false;
-bool saveDebugImages = false; 
+bool saveDebugImages = false;
 bool NotfirstRunSingleTarget = false;
 int flickAimTime = 20;
 int snapValue = 5;
@@ -224,7 +224,7 @@ void InitMoveMouse() {
 	thread normal(NormalMouse);
 	normal.detach();
 }
-void SendInputs()
+void SendInputsDown()
 {
 	InterceptionMouseStroke mstroke;
 
@@ -236,9 +236,11 @@ void SendInputs()
 
 	mstroke.state = INTERCEPTION_MOUSE_LEFT_BUTTON_DOWN;
 	interception_send(context, device, (InterceptionStroke*)&mstroke, 1);
+}
 
-	Sleep(trgUpdateSpeed);
-
+void SendInputsUp()
+{
+	InterceptionMouseStroke mstroke;
 	mstroke.state = INTERCEPTION_MOUSE_LEFT_BUTTON_UP;
 	interception_send(context, device, (InterceptionStroke*)&mstroke, 1);
 
@@ -246,6 +248,13 @@ void SendInputs()
 	//mstroke.x = static_cast<int>((0xFFFF * center.x) / screen_width);
 	//mstroke.y = static_cast<int>((0xFFFF * center.y) / screen_height);
 	interception_send(context, device, (InterceptionStroke*)&mstroke, 1);
+}
+
+void SendInputsWithSleep(int tmrSlp)
+{
+	SendInputsDown();
+	Sleep(tmrSlp);
+	SendInputsUp();
 }
 
 void MoveMouse(int dx, int dy) {
@@ -264,9 +273,9 @@ void MoveMouse(int dx, int dy) {
 	interception_send(context, device, &stroke, 1);
 
 	//if (trigger && (abs(dx) < (triggerFov + offset[0]) && abs(dy) < (triggerFov + offset[1] + recoilOffset)))
-	if (trigger && (abs(dx) < (triggerFov + offset[0]) && ( dy <= 0 && dy > -(triggerFov + tempCalcY))))
+	if (trigger && (abs(dx) < (triggerFov + offset[0]) && (dy <= 0 && dy > -(triggerFov + tempCalcY))))
 	{
-		SendInputs();
+		SendInputsWithSleep(trgUpdateSpeed);
 	}
 }
 
@@ -314,17 +323,19 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 		if (!recoilControlStart)
 		{
 			recoilControlStart = true;
-			timerStart = std::chrono::high_resolution_clock::now();
+			//timerStart = std::chrono::high_resolution_clock::now();
+			//timeDiff = 0;
 			timeDiff = 0;
 			recoilOffset = 0;
 		}
 		else if (recoilOffset < 7)
 		{
-			auto end = std::chrono::high_resolution_clock::now();
-			timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(end - timerStart).count();
-			if (timeDiff > 150)
+			//auto end = std::chrono::high_resolution_clock::now();
+			//timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(end - timerStart).count();
+			//if (timeDiff > 150)
+			if (timeDiff > 5)
 			{
-				recoilOffset = ((timeDiff - 150) / 50);
+				recoilOffset = (timeDiff - 4);
 
 				if (recoilOffset > 6)
 				{
@@ -337,6 +348,8 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 				if (abs(moveY) < 2)
 					moveY = 0;
 			}
+			timeDiff++;
+
 			if (isDebugging)
 				//logging::INFO( "timeDiff: " + timeDiff + ' ' + recoilOffset);
 				cout << "Time: " << timeDiff << "ms " << recoilOffset << endl;
@@ -369,7 +382,7 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 			MoveMouse(moveX * speed, moveY * speed);
 	}
 }
-typedef bool(*ColorChecks)(unsigned short , unsigned short , unsigned short );
+typedef bool(*ColorChecks)(unsigned short, unsigned short, unsigned short);
 ColorChecks currentColorChecks;
 
 bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue) {
@@ -420,20 +433,20 @@ void UpdateColorChecks(int counter)
 {
 	switch (counter % 3)
 	{
-		case 0:
-			currentColorChecks = IsPurpleColor;
-			currentColourMethodName = "Purple Colour";
-			break;
-		case 1:
-			currentColorChecks = IsRedColor;
-			currentColourMethodName = "Red Colour";
-			break;
-		case 2:
-			currentColorChecks = IsYellowColor;
-			currentColourMethodName = "Yellow Colour";
-			break;
-		default:
-			break;
+	case 0:
+		currentColorChecks = IsPurpleColor;
+		currentColourMethodName = "Purple Colour";
+		break;
+	case 1:
+		currentColorChecks = IsRedColor;
+		currentColourMethodName = "Red Colour";
+		break;
+	case 2:
+		currentColorChecks = IsYellowColor;
+		currentColourMethodName = "Yellow Colour";
+		break;
+	default:
+		break;
 	}
 }
 
@@ -1034,7 +1047,7 @@ void UpdateSortingMethod(int id) {
 	}
 }
 
-bool ReadConfig( int index) {
+bool ReadConfig(int index) {
 	string fileName = "Configs/config_";
 	fileName.append(profiles[index]);
 	fileName.append(".txt");
@@ -1197,7 +1210,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 void CheckForTrg(BYTE* data, int h, int w)
 {
-	
+
 
 	for (int j = 0; j < h; ++j) {
 		for (int i = 0; i < w * 4; i += 4) {
@@ -1209,13 +1222,13 @@ void CheckForTrg(BYTE* data, int h, int w)
 				//vects.push_back(Vector2((i / 4) - (w / 2), j - (h / 2)));
 				if (abs((i / 4) - (w / 2)) < 5 && abs(j - (h / 2)) < 5)
 				{
-					SendInputs();
+					SendInputsWithSleep(trgUpdateSpeed);
 					return;
 				}
 			}
 		}
 	}
-	
+
 }
 
 bool NewSortingMethod(BYTE* data, int h, int w) {
@@ -1281,7 +1294,7 @@ bool NewSortingMethod(BYTE* data, int h, int w) {
 				if (abs(current.x + forb.x) < forSize) {
 					canUpdate = false;
 					break;
-				}			
+				}
 			}
 
 			if (canUpdate) {
@@ -1321,7 +1334,7 @@ bool CheckForTrigger(BYTE* data) {
 
 			if (currentColorChecks(red, green, blue)) {
 				//vects.push_back(Vector2((i / 4) - (triggerFov / 2), j - (triggerFov / 2)));
-				SendInputs();
+				SendInputsWithSleep(trgUpdateSpeed);
 				return true;
 			}
 		}
@@ -1339,13 +1352,13 @@ void GetImageForDebuggingNew(BYTE* data, int h, int w) {
 	ofstream img2("Test/debugpicDetectionVectors" + std::to_string(counterNew++) + ".ppm"); //#include <fstream>
 
 	img << "P3" << endl;
-	img << w  << endl;
-	img << h  << endl;
+	img << w << endl;
+	img << h << endl;
 	img << "255" << endl;
 
 	img2 << "P3" << endl;
-	img2 << w  << endl;
-	img2 << h  << endl;
+	img2 << w << endl;
+	img2 << h << endl;
 	img2 << "255" << endl;
 
 
@@ -1385,9 +1398,9 @@ void GetImageForDebuggingNew(BYTE* data, int h, int w) {
 bool IsConsoleVisible = true;
 void ConsoleVisSwitch()
 {
-	if(IsConsoleVisible)
+	if (IsConsoleVisible)
 		::ShowWindow(::GetConsoleWindow(), SW_HIDE);
-	else 
+	else
 		::ShowWindow(::GetConsoleWindow(), SW_SHOW);
 
 	IsConsoleVisible = !IsConsoleVisible;
@@ -1631,9 +1644,9 @@ int main(int, char**)
 			if (full360 <= 0) {
 				ImGui::Text("TO USE THIS COLORBOT \nFULL360 MUST BE CONFIGURED CORRECTLY\nTHIS IS DIFFERENT FOR ALL COMPUTERS\n\nTHE OPTIMAL SPEED I FOUND OUT TO BE AROUND 0.2\nSO IMO, ONLY CHANGE FULL360\n(FULL360 SHOULD BE AROUND 5000-25000)");
 			}
-			
 
-			if (ImGui::Button( IsConsoleVisible ? "Hide Console" : "View Console"))
+
+			if (ImGui::Button(IsConsoleVisible ? "Hide Console" : "View Console"))
 			{
 				ConsoleVisSwitch();
 			}
@@ -1643,7 +1656,7 @@ int main(int, char**)
 			if (isDebugging)
 			{
 				ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-				ImGui::Checkbox("Save Images", &saveDebugImages );
+				ImGui::Checkbox("Save Images", &saveDebugImages);
 			}
 			else
 			{
