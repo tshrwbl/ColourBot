@@ -75,7 +75,7 @@ bool flickAim = false;
 bool recoilControl = false;
 bool overloadManualInputs = false;
 bool isDebugging = false;
-bool saveDebugImages = false; 
+bool saveDebugImages = false;
 bool NotfirstRunSingleTarget = false;
 int flickAimTime = 20;
 int snapValue = 5;
@@ -226,6 +226,13 @@ void InitMoveMouse() {
 }
 void SendInputs()
 {
+	//if (overloadManualInputs && GetAsyncKeyState(VK_LBUTTON))
+	//{
+	//	/*if (recoilOffset < 7)
+	//		recoilOffset++;*/
+	//	return;
+	//}
+
 	InterceptionMouseStroke mstroke;
 
 	mstroke.flags = INTERCEPTION_MOUSE_MOVE_ABSOLUTE;
@@ -261,13 +268,26 @@ void MoveMouse(int dx, int dy) {
 	if (isDebugging)
 		//logging::INFO("Cords: " + dx + ',' + dy);
 		cout << "Cords: x-" << dx << "y-" << dy << endl;
-	interception_send(context, device, &stroke, 1);
+
+	bool isProximity = (trigger && (abs(dx) < (triggerFov + offset[0]) && (dy <= 0 && dy > -(triggerFov + tempCalcY))));
+
+	if (overloadManualInputs && isProximity && GetAsyncKeyState(VK_LBUTTON))
+	{
+		return;
+	}
+	else
+	{
+		interception_send(context, device, &stroke, 1);
+		if (isProximity)
+			SendInputs();
+	}
+
 
 	//if (trigger && (abs(dx) < (triggerFov + offset[0]) && abs(dy) < (triggerFov + offset[1] + recoilOffset)))
-	if (trigger && (abs(dx) < (triggerFov + offset[0]) && ( dy <= 0 && dy > -(triggerFov + tempCalcY))))
-	{
-		SendInputs();
-	}
+	//if (trigger && (abs(dx) < (triggerFov + offset[0]) && (dy <= 0 && dy > -(triggerFov + tempCalcY))))
+	//{
+	//	SendInputs();
+	//}
 }
 
 typedef bool(*ColorSortingMethod)(char*, int, int);
@@ -301,57 +321,56 @@ int timeDiff;
 void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 	SetIsZoomed();
 
-	if (overloadManualInputs && GetAsyncKeyState(VK_LBUTTON))
-	{
-		return;
-	}
+	//overload changed from moving to shooting
+	//if (overloadManualInputs && GetAsyncKeyState(VK_LBUTTON))
+	//{
+	//	return;
+	//}
 
 	int moveX = GetCoordsX(front.x, width);
 	int moveY = GetCoordsY(front.y, height);
 
-	if (recoilControl && GetAsyncKeyState(VK_LBUTTON))
-	{
-		if (!recoilControlStart)
-		{
-			recoilControlStart = true;
-			timerStart = std::chrono::high_resolution_clock::now();
-			timeDiff = 0;
-			recoilOffset = 0;
-		}
-		else if (recoilOffset < 7)
-		{
-			auto end = std::chrono::high_resolution_clock::now();
-			timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(end - timerStart).count();
-			if (timeDiff > 150)
-			{
-				recoilOffset = ((timeDiff - 150) / 50);
-
-				if (recoilOffset > 6)
-				{
-					return;
-				}
-
-				if (abs(moveX) < 2)
-					moveX = 0;
-
-				if (abs(moveY) < 2)
-					moveY = 0;
-			}
-			if (isDebugging)
-				//logging::INFO( "timeDiff: " + timeDiff + ' ' + recoilOffset);
-				cout << "Time: " << timeDiff << "ms " << recoilOffset << endl;
-			//timerStart = std::chrono::high_resolution_clock::now();
-		}
-		else
-		{
-			return;
-		}
-	}
-	else
-	{
-		recoilControlStart = false;
-		recoilOffset = 0;
-	}
+	//Recoil control removed from here
+	//if (recoilControl && GetAsyncKeyState(VK_LBUTTON))
+	//{
+	//	if (!recoilControlStart)
+	//	{
+	//		recoilControlStart = true;
+	//		timerStart = std::chrono::high_resolution_clock::now();
+	//		timeDiff = 0;
+	//		recoilOffset = 0;
+	//	}
+	//	else if (recoilOffset < 7)
+	//	{
+	//		auto end = std::chrono::high_resolution_clock::now();
+	//		timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(end - timerStart).count();
+	//		if (timeDiff > 150)
+	//		{
+	//			recoilOffset = ((timeDiff - 150) / 50);
+	//			if (recoilOffset > 6)
+	//			{
+	//				return;
+	//			}
+	//			if (abs(moveX) < 2)
+	//				moveX = 0;
+	//			if (abs(moveY) < 2)
+	//				moveY = 0;
+	//		}
+	//		if (isDebugging)
+	//			//logging::INFO( "timeDiff: " + timeDiff + ' ' + recoilOffset);
+	//			cout << "Time: " << timeDiff << "ms " << recoilOffset << endl;
+	//		//timerStart = std::chrono::high_resolution_clock::now();
+	//	}
+	//	else
+	//	{
+	//		return;
+	//	}
+	//}
+	//else
+	//{
+	//	recoilControlStart = false;
+	//	recoilOffset = 0;
+	//}
 
 
 	if (flickAim) {
@@ -369,7 +388,7 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 			MoveMouse(moveX * speed, moveY * speed);
 	}
 }
-typedef bool(*ColorChecks)(unsigned short , unsigned short , unsigned short );
+typedef bool(*ColorChecks)(unsigned short, unsigned short, unsigned short);
 ColorChecks currentColorChecks;
 
 bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue) {
@@ -420,20 +439,20 @@ void UpdateColorChecks(int counter)
 {
 	switch (counter % 3)
 	{
-		case 0:
-			currentColorChecks = IsPurpleColor;
-			currentColourMethodName = "Purple Colour";
-			break;
-		case 1:
-			currentColorChecks = IsRedColor;
-			currentColourMethodName = "Red Colour";
-			break;
-		case 2:
-			currentColorChecks = IsYellowColor;
-			currentColourMethodName = "Yellow Colour";
-			break;
-		default:
-			break;
+	case 0:
+		currentColorChecks = IsPurpleColor;
+		currentColourMethodName = "Purple Colour";
+		break;
+	case 1:
+		currentColorChecks = IsRedColor;
+		currentColourMethodName = "Red Colour";
+		break;
+	case 2:
+		currentColorChecks = IsYellowColor;
+		currentColourMethodName = "Yellow Colour";
+		break;
+	default:
+		break;
 	}
 }
 
@@ -1034,7 +1053,7 @@ void UpdateSortingMethod(int id) {
 	}
 }
 
-bool ReadConfig( int index) {
+bool ReadConfig(int index) {
 	string fileName = "Configs/config_";
 	fileName.append(profiles[index]);
 	fileName.append(".txt");
@@ -1197,7 +1216,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 void CheckForTrg(BYTE* data, int h, int w)
 {
-	
+
 
 	for (int j = 0; j < h; ++j) {
 		for (int i = 0; i < w * 4; i += 4) {
@@ -1215,7 +1234,7 @@ void CheckForTrg(BYTE* data, int h, int w)
 			}
 		}
 	}
-	
+
 }
 
 bool NewSortingMethod(BYTE* data, int h, int w) {
@@ -1281,7 +1300,7 @@ bool NewSortingMethod(BYTE* data, int h, int w) {
 				if (abs(current.x + forb.x) < forSize) {
 					canUpdate = false;
 					break;
-				}			
+				}
 			}
 
 			if (canUpdate) {
@@ -1339,13 +1358,13 @@ void GetImageForDebuggingNew(BYTE* data, int h, int w) {
 	ofstream img2("Test/debugpicDetectionVectors" + std::to_string(counterNew++) + ".ppm"); //#include <fstream>
 
 	img << "P3" << endl;
-	img << w  << endl;
-	img << h  << endl;
+	img << w << endl;
+	img << h << endl;
 	img << "255" << endl;
 
 	img2 << "P3" << endl;
-	img2 << w  << endl;
-	img2 << h  << endl;
+	img2 << w << endl;
+	img2 << h << endl;
 	img2 << "255" << endl;
 
 
@@ -1385,9 +1404,9 @@ void GetImageForDebuggingNew(BYTE* data, int h, int w) {
 bool IsConsoleVisible = true;
 void ConsoleVisSwitch()
 {
-	if(IsConsoleVisible)
+	if (IsConsoleVisible)
 		::ShowWindow(::GetConsoleWindow(), SW_HIDE);
-	else 
+	else
 		::ShowWindow(::GetConsoleWindow(), SW_SHOW);
 
 	IsConsoleVisible = !IsConsoleVisible;
@@ -1631,9 +1650,9 @@ int main(int, char**)
 			if (full360 <= 0) {
 				ImGui::Text("TO USE THIS COLORBOT \nFULL360 MUST BE CONFIGURED CORRECTLY\nTHIS IS DIFFERENT FOR ALL COMPUTERS\n\nTHE OPTIMAL SPEED I FOUND OUT TO BE AROUND 0.2\nSO IMO, ONLY CHANGE FULL360\n(FULL360 SHOULD BE AROUND 5000-25000)");
 			}
-			
 
-			if (ImGui::Button( IsConsoleVisible ? "Hide Console" : "View Console"))
+
+			if (ImGui::Button(IsConsoleVisible ? "Hide Console" : "View Console"))
 			{
 				ConsoleVisSwitch();
 			}
@@ -1643,7 +1662,7 @@ int main(int, char**)
 			if (isDebugging)
 			{
 				ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-				ImGui::Checkbox("Save Images", &saveDebugImages );
+				ImGui::Checkbox("Save Images", &saveDebugImages);
 			}
 			else
 			{
