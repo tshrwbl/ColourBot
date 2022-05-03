@@ -21,6 +21,7 @@
 #include "interception.h"
 #include <string>
 
+
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
 #define PROCESS_NAME L"VALORANT  " 
@@ -72,6 +73,7 @@ struct Vector2 {
 };
 
 bool flickAim = false;
+bool inputSentInCurrentSession = false;
 bool recoilControl = false;
 bool overloadManualInputs = false;
 bool isDebugging = false;
@@ -232,7 +234,7 @@ void SendInputs()
 	//		recoilOffset++;*/
 	//	return;
 	//}
-
+	inputSentInCurrentSession = true;
 	InterceptionMouseStroke mstroke;
 
 	mstroke.flags = INTERCEPTION_MOUSE_MOVE_ABSOLUTE;
@@ -255,9 +257,15 @@ void SendInputs()
 	interception_send(context, device, (InterceptionStroke*)&mstroke, 1);
 }
 
+void PrintDebug(string str)
+{
+	if (isDebugging)
+		cout << str << endl;
+}
+
 void MoveMouse(int dx, int dy) {
 
-	auto tempCalcY = (flickAim ? offset[1] * 2 : offset[1]) + recoilOffset;
+	auto tempCalcY = (flickAim ? offset[1] * 2 : offset[1]);
 
 	InterceptionMouseStroke& mstroke = *(InterceptionMouseStroke*)&stroke;
 	mstroke.flags = 0;
@@ -265,21 +273,34 @@ void MoveMouse(int dx, int dy) {
 	mstroke.x = dx + offset[0];
 	mstroke.y = dy + tempCalcY;
 
-	if (isDebugging)
-		//logging::INFO("Cords: " + dx + ',' + dy);
-		cout << "Cords: x-" << dx << "y-" << dy << endl;
+	PrintDebug("Cords: " + dx + ',' + dy);
 
-	bool isProximity = (trigger && (abs(dx) < (triggerFov + offset[0]) && (dy <= 0 && dy > -(triggerFov + tempCalcY))));
+	bool isXproximity = (trigger && (abs(dx) < (triggerFov + offset[0])));
+	bool isYproximity = (dy <= 0 && dy > -(triggerFov + tempCalcY));
 
-	if (overloadManualInputs && isProximity && GetAsyncKeyState(VK_LBUTTON))
+	if (overloadManualInputs && isXproximity && isYproximity && GetAsyncKeyState(VK_LBUTTON))
 	{
+		inputSentInCurrentSession = true;
+		PrintDebug("returned moveMouse  iok ");
 		return;
 	}
 	else
 	{
+		if (inputSentInCurrentSession && GetAsyncKeyState(VK_LBUTTON))
+		{
+			mstroke.y = 0;
+			interception_send(context, device, &stroke, 1);
+			return;
+		}
+
 		interception_send(context, device, &stroke, 1);
-		if (isProximity)
+		inputSentInCurrentSession = false;
+
+		if (isXproximity && isYproximity)
+		{
 			SendInputs();
+			PrintDebug("Hit move mouse ");
+		}
 	}
 
 
@@ -315,8 +336,8 @@ int GetCoordsY(int delta, int total) {
 	return (Full360() * degrees) / 360;
 }
 
-std::chrono::high_resolution_clock::time_point timerStart;
-int timeDiff;
+//std::chrono::high_resolution_clock::time_point timerStart;
+//int timeDiff;
 
 void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 	SetIsZoomed();
@@ -337,39 +358,32 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 	//	{
 	//		recoilControlStart = true;
 	//		timerStart = std::chrono::high_resolution_clock::now();
-	//		timeDiff = 0;
-	//		recoilOffset = 0;
-	//	}
-	//	else if (recoilOffset < 7)
-	//	{
-	//		auto end = std::chrono::high_resolution_clock::now();
-	//		timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(end - timerStart).count();
-	//		if (timeDiff > 150)
-	//		{
-	//			recoilOffset = ((timeDiff - 150) / 50);
-	//			if (recoilOffset > 6)
-	//			{
-	//				return;
-	//			}
-	//			if (abs(moveX) < 2)
-	//				moveX = 0;
-	//			if (abs(moveY) < 2)
-	//				moveY = 0;
-	//		}
-	//		if (isDebugging)
-	//			//logging::INFO( "timeDiff: " + timeDiff + ' ' + recoilOffset);
-	//			cout << "Time: " << timeDiff << "ms " << recoilOffset << endl;
-	//		//timerStart = std::chrono::high_resolution_clock::now();
+	//		//timeDiff = 0;
+	//		//recoilOffset = 0;
 	//	}
 	//	else
 	//	{
-	//		return;
+	//		auto end = std::chrono::high_resolution_clock::now();
+	//		timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(end - timerStart).count();
+
+	//		/*recoilOffset = ((timeDiff - 150) / 50);
+	//		if (recoilOffset > 6)
+	//		{
+	//			return;
+	//		}
+	//		if (abs(moveX) < 2)
+	//			moveX = 0;
+	//		if (abs(moveY) < 2)
+	//			moveY = 0;*/
+
+	//			//timerStart = std::chrono::high_resolution_clock::now();
 	//	}
+
 	//}
 	//else
 	//{
 	//	recoilControlStart = false;
-	//	recoilOffset = 0;
+	//	//recoilOffset = 0;
 	//}
 
 
@@ -1014,6 +1028,7 @@ void ScreenGrabMain() {
 					/*if (isDebugging)
 						system("cls");*/
 					NotfirstRunSingleTarget = false;
+					inputSentInCurrentSession = false;
 				}
 			}
 		}
