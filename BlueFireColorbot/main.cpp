@@ -72,11 +72,19 @@ struct Vector2 {
 };
 
 bool flickAim = false;
+bool disableFlick = false;
+
 bool recoilControl = false;
 bool overloadManualInputs = false;
+
+bool OneTimeOnly = false;
+bool OneTimeOnlyBlockStage = false;
+
 bool isDebugging = false;
 bool saveDebugImages = false;
+
 bool NotfirstRunSingleTarget = false;
+
 int flickAimTime = 20;
 int snapValue = 5;
 int checkingRangeSingleTarget = 20;
@@ -86,6 +94,7 @@ int maxY = 300;
 bool lmbTrigger = false;
 bool trigger = true;
 int triggerFov = 10;
+int opDelay = 0;
 int trgUpdateSpeed = 20;
 //inline float recoilms = 0.2;
 bool recoil = false;
@@ -257,7 +266,8 @@ void SendInputs()
 
 void MoveMouse(int dx, int dy) {
 
-	auto tempCalcY = (flickAim ? offset[1] * 2 : offset[1]) + recoilOffset;
+	//auto tempCalcY = (flickAim ? offset[1] * 2 : offset[1]) + recoilOffset;
+	auto tempCalcY = offset[1] + recoilOffset;
 
 	InterceptionMouseStroke& mstroke = *(InterceptionMouseStroke*)&stroke;
 	mstroke.flags = 0;
@@ -279,7 +289,15 @@ void MoveMouse(int dx, int dy) {
 	{
 		interception_send(context, device, &stroke, 1);
 		if (isProximity)
+		{
 			SendInputs();
+			//if (ProfileIndex == 1) //unsure if this work
+			//{
+			//	Sleep(25);
+			//	SendInputs();
+			//}
+			OneTimeOnlyBlockStage = true;
+		}
 	}
 
 
@@ -373,12 +391,13 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 	//}
 
 
-	if (flickAim) {
+	if (flickAim && !disableFlick) {
 		MoveMouse(moveX, moveY);
 		Sleep(flickAimTime);
-
+		disableFlick = true;
 		/*trueX = onTargetLockX;
 		trueY = onTargetLockY;*/
+
 	}
 	else {
 
@@ -983,7 +1002,6 @@ void ScreenGrabMain() {
 				shouldRun = (GetKeyState(holdKey) == 1);
 			}
 
-
 			if (shouldRun) {
 				lmbTrigger = false;
 				//isReallyRunning = shouldRun;
@@ -993,11 +1011,21 @@ void ScreenGrabMain() {
 				}
 				else {
 					//ScreenGrab();
-					ScreenGrabModified();
+					if (OneTimeOnly)
+					{
+						if(!OneTimeOnlyBlockStage)
+							ScreenGrabModified();
+					}
+					else
+					{
+						ScreenGrabModified();
+					}
 				}
 			}
 			else {
-				lmbTrigger = (GetKeyState(VK_RBUTTON) & 0x8000);
+				bool ZoomBtn = (GetKeyState(VK_RBUTTON) & 0x8000);
+				bool slowPaceBtn = (GetKeyState(VK_SHIFT) & 0x8000);
+				lmbTrigger = ZoomBtn || slowPaceBtn;
 				if (lmbTrigger)
 				{
 					//ScreenGrab();
@@ -1013,8 +1041,10 @@ void ScreenGrabMain() {
 					//}
 					/*if (isDebugging)
 						system("cls");*/
+					disableFlick = false;
 					NotfirstRunSingleTarget = false;
 				}
+				OneTimeOnlyBlockStage = false;
 			}
 		}
 		else {
@@ -1093,6 +1123,9 @@ bool ReadConfig(int index) {
 			READ(trigger);
 			READ(triggerFov);
 			READ(trgUpdateSpeed);
+			READ(opDelay);
+			READ(OneTimeOnly);
+
 		}
 
 		offset[0] = offsetX;
@@ -1130,6 +1163,9 @@ void SaveConfig(int index) {
 	WRITE(trigger);
 	WRITE(triggerFov);
 	WRITE(trgUpdateSpeed);
+	WRITE(opDelay);
+	WRITE(OneTimeOnly);
+
 
 	cFile << "#All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes\n";
 	if (holdKeyIndex > 0) {
@@ -1228,7 +1264,28 @@ void CheckForTrg(BYTE* data, int h, int w)
 				//vects.push_back(Vector2((i / 4) - (w / 2), j - (h / 2)));
 				if (abs((i / 4) - (w / 2)) < 5 && abs(j - (h / 2)) < 5)
 				{
-					SendInputs();
+					//w 87
+					bool wkey = (GetKeyState(87) & 0x8000);
+					//a 65
+					bool akey = (GetKeyState(65) & 0x8000);
+					bool skey = (GetKeyState(83) & 0x8000);
+					bool dkey = (GetKeyState(68) & 0x8000);
+					//s 83
+					//d 68
+
+
+					if (isDebugging)
+						cout << wkey << akey << skey << dkey << endl;
+
+					if (!( wkey || akey || skey || dkey))
+					{
+						SendInputs();
+						//OneTimeOnlyBlockStage = true;
+					}
+					else if (ProfileIndex == 9) //OP
+					{
+						Sleep(opDelay);
+					}
 					return;
 				}
 			}
@@ -1480,6 +1537,7 @@ int main(int, char**)
 	// Setup Dear ImGui style
 	ImGui::StyleColorsDark();
 	//ImGui::StyleColorsClassic();
+	
 
 	// Setup Platform/Renderer backends
 	ImGui_ImplWin32_Init(hwnd);
@@ -1564,7 +1622,12 @@ int main(int, char**)
 				ImGui::InputInt("ms", &flickAimTime);
 				//ImGui::InputInt("Range to update", &checkingRangeSingleTarget);
 				ImGui::InputInt("Ignore Smooth", &snapValue);
+				if (ProfileIndex == 9) //OP
+				{
+					ImGui::InputInt("OP dealy", &opDelay);
+				}
 				ImGui::Checkbox("Recoil Control", &recoilControl);
+				ImGui::Checkbox("One Shot", &OneTimeOnly);
 				ImGui::SameLine();
 				//ImGui::Text("Recol New Method");
 				//ImGui::Checkbox("Recoil New Method", &recoil);
@@ -1633,22 +1696,23 @@ int main(int, char**)
 					ColourCounter++;
 					UpdateColorChecks(ColourCounter);
 				}
-
+					
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Save Config")) {
 				SaveConfig(ProfileIndex);
 			}
 			ImGui::SameLine();
-			if (ImGui::Button(isRunning ? "Stop colorbot" : "Start colorbot")) {
+			if (ImGui::Button(isRunning ? "\tStop\t" : "\tStart\t")) {
 				isRunning = !isRunning;
 			}
 			if (isRunning && isReallyRunning) {
 				ImGui::SameLine();
 				ImGui::TextColored(ImVec4(0.4f, 0, 1, 1), "Running");
+
 			}
 			if (full360 <= 0) {
-				ImGui::Text("TO USE THIS COLORBOT \nFULL360 MUST BE CONFIGURED CORRECTLY\nTHIS IS DIFFERENT FOR ALL COMPUTERS\n\nTHE OPTIMAL SPEED I FOUND OUT TO BE AROUND 0.2\nSO IMO, ONLY CHANGE FULL360\n(FULL360 SHOULD BE AROUND 5000-25000)");
+				ImGui::Text("TO USE THIS \nFULL360 MUST BE CONFIGURED CORRECTLY\nTHIS IS DIFFERENT FOR ALL COMPUTERS\n\nTHE OPTIMAL SPEED I FOUND OUT TO BE AROUND 0.2\nSO IMO, ONLY CHANGE FULL360\n(FULL360 SHOULD BE AROUND 5000-25000)");
 			}
 
 

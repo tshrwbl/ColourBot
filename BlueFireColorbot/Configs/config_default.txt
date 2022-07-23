@@ -14,6 +14,8 @@ overloadManualInputs=0
 trigger=1
 triggerFov=3
 trgUpdateSpeed=20
+opDelay=0
+OneTimeOnly=1
 #All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 holdKey=4
 isHold=1
