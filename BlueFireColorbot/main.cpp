@@ -215,7 +215,7 @@ void NormalMouse() {
 }
 
 void InitMoveMouse() {
-	cout << "Loading Interception..." << endl;
+	cout << "Loading it . . . ." << endl;
 
 	context = interception_create_context();
 	interception_set_filter(context, interception_is_mouse, INTERCEPTION_FILTER_MOUSE_MOVE);
@@ -229,7 +229,7 @@ void InitMoveMouse() {
 			break;
 		}
 	}
-	cout << "Interception Loaded" << endl;
+	cout << "its Loaded ....." << endl;
 	thread normal(NormalMouse);
 	normal.detach();
 }
@@ -817,7 +817,7 @@ bool InitColor() {
 	hr = lDevice->CreateTexture2D(&desc, NULL, &texture);
 
 	if (FAILED(hr)) {
-		cout << "Failed to create texture" << endl;
+		cout << "No texture" << endl;
 		return false;
 	}
 
@@ -1509,7 +1509,7 @@ int main(int, char**)
 	WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, _T("ImGui Example"), NULL };
 	::RegisterClassEx(&wc);
 
-	HWND hwnd = ::CreateWindow(wc.lpszClassName, _T("LABADABA dub dub's"), WS_OVERLAPPEDWINDOW, 0, 0, 400, 600, NULL, NULL, wc.hInstance, NULL);
+	HWND hwnd = ::CreateWindow(wc.lpszClassName, _T("shakalaka boom boom"), WS_OVERLAPPEDWINDOW, 0, 0, 400, 600, NULL, NULL, wc.hInstance, NULL);
 
 
 	HICON hIcon = LoadIcon(wc.hInstance, MAKEINTRESOURCE(MAINICON));
@@ -1660,6 +1660,27 @@ int main(int, char**)
 					}
 					Sleep(20);
 				}
+
+
+				//if (isRunning )
+				//{
+				//	if (GetKeyState(VK_TAB) == 1)
+				//	{
+				//		if (!OneTimeOnly)
+				//			Beep(500, 200);
+				//		OneTimeOnly = true;
+				//	}
+				//	else
+				//	{
+				//		if (OneTimeOnly)
+				//		{
+				//			Beep(300, 100);
+				//			Beep(250, 100);
+				//		}
+				//		OneTimeOnly = false;
+				//	}
+				//	//Sleep(20);
+				//}
 
 				if (flickAimTime < 0) {
 					flickAimTime = 0;
