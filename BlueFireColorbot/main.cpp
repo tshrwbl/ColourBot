@@ -24,15 +24,17 @@
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
-#include <charconv>
 #include <vector>
 #include <atomic>
 #include <filesystem>
-#include <string_view>
 #include <wrl/client.h>
 #include <thread>
 #include "interception.h"
 #include <string>
+#include "DetectionCommon.h"
+#include "CpuDetector.h"
+#include "GpuColorDetector.h"
+#include "ConfigIO.h"
 
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
@@ -63,29 +65,19 @@ D3D_FEATURE_LEVEL gFeatureLevels[] = {
 UINT gNumFeatureLevels = ARRAYSIZE(gFeatureLevels);
 
 
+using colourbot::kPixelStride;
+using colourbot::MakeBounds;
+using colourbot::ScanBounds;
+using colourbot::Vector2;
+
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kRadToDeg = 180.0 / kPi;
 constexpr double kDegToRad = kPi / 180.0;
-constexpr int kPixelStride = 4;
-
-struct Vector2 {
-	int x;
-	int y;
-	constexpr Vector2(int X, int Y) noexcept : x(X), y(Y) {}
-	[[nodiscard]] constexpr int LenSq() const noexcept {
-		return (x * x) + (y * y);
-	}
-	[[nodiscard]] constexpr Vector2 operator+(const Vector2& a) const noexcept
-	{
-		return Vector2(a.x + x, a.y + y);
-	}
-};
 
 bool flickAim = false;
 bool recoilControl = false;
 bool overloadManualInputs = false;
 bool isDebugging = false;
-bool NotfirstRunSingleTarget = false;
 int flickAimTime = 20;
 int checkingRangeSingleTarget = 20;
 float speed = 0.2f;
@@ -168,9 +160,16 @@ uint32_t height;
 ComPtr<IDXGISurface1> gdiSurface;
 ComPtr<ID3D11Texture2D> texture;
 ComPtr<ID3D11Texture2D> frameCopyTexture;
+ComPtr<IDXGIOutputDuplication> desktopDuplication;
 HWND game_window;
 std::atomic<bool> requestDebugCapture{ false };
 std::atomic<unsigned long long> captureCounter{ 0ULL };
+RECT duplicationDesktopRect{ 0, 0, 0, 0 };
+
+colourbot::CpuDetector cpuDetector;
+colourbot::GpuColorDetector gpuDetector;
+bool gpuDetectorAvailable = false;
+bool desktopDuplicationAvailable = false;
 
 InterceptionContext context;
 InterceptionDevice device;
@@ -219,8 +218,13 @@ static void MoveMouse(int dx, int dy) {
 }
 
 using PixelBuffer = const std::uint8_t*;
-typedef bool(*ColorSortingMethod)(PixelBuffer, int, int, int);
-ColorSortingMethod currentSortingMethod;
+enum class SortingMethod {
+	CustomPriority = 0,
+	FirstColor = 1,
+	SingleTargetPriority = 2,
+	GpuFast = 3
+};
+SortingMethod currentSortingMethod = SortingMethod::CustomPriority;
 
 static void SetIsZoomed() { // CALL THIS EVERY FRAME
 	isZoomed = GetAsyncKeyState(VK_RBUTTON);
@@ -315,126 +319,44 @@ static void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 	}
 }
 
-static bool IsPurpleColor(std::uint8_t red, std::uint8_t green, std::uint8_t blue) {
-	// updated PURPLE FROM https://www.unknowncheats.me/forum/valorant/437368-updated-colors-pixel-bot-act-4-a.html
-	if (green >= 170) {
-		return false;
+static bool RunCpuSorting(PixelBuffer data, int height, int width, int rowPitch) {
+	Vector2 target;
+	bool found = false;
+	switch (currentSortingMethod) {
+	case SortingMethod::CustomPriority:
+		found = cpuDetector.CustomPriority(data, height, width, rowPitch, trueX, trueY, target);
+		break;
+	case SortingMethod::FirstColor:
+		found = cpuDetector.FirstColor(data, height, width, rowPitch, trueX, trueY, target);
+		break;
+	case SortingMethod::SingleTargetPriority:
+		found = cpuDetector.SingleTargetPriority(data, height, width, rowPitch, trueX, trueY, checkingRangeSingleTarget, speed, target);
+		break;
+	case SortingMethod::GpuFast:
+	default:
+		found = false;
+		break;
 	}
 
-	if (green >= 120) {
-		return std::abs(int(red) - int(blue)) <= 8 &&
-			red - green >= 50 &&
-			blue - green >= 50 &&
-			red >= 105 &&
-			blue >= 105;
+	if (found) {
+		MoveMouseFromScreenPosition(target, height, width);
 	}
-
-	return std::abs(int(red) - int(blue)) <= 13 &&
-		red - green >= 60 &&
-		blue - green >= 60 &&
-		red >= 110 &&
-		blue >= 100;
+	return found;
 }
 
-// Bounds helpers keep all pixel scans clipped to the mapped frame.
-struct ScanBounds {
-	int minX;
-	int maxX;
-	int minY;
-	int maxY;
-};
-
-static ScanBounds MakeBounds(int centerX, int centerY, int rangeX, int rangeY, int width, int height) {
-	const int boundedRangeX = (std::max)(0, rangeX);
-	const int boundedRangeY = (std::max)(0, rangeY);
-	return {
-		(std::max)(0, centerX - boundedRangeX),
-		(std::min)(width, centerX + boundedRangeX),
-		(std::max)(0, centerY - boundedRangeY),
-		(std::min)(height, centerY + boundedRangeY)
-	};
-}
-
-static void CollectPurpleCandidates(PixelBuffer data, int rowPitch, int halfWidth, int halfHeight, const ScanBounds& bounds, std::vector<Vector2>& out) {
-	for (int y = bounds.minY; y < bounds.maxY; ++y) {
-		const auto* pixel = data + (static_cast<size_t>(y) * static_cast<size_t>(rowPitch)) + (static_cast<size_t>(bounds.minX) * kPixelStride);
-		for (int x = bounds.minX; x < bounds.maxX; ++x) {
-			const std::uint8_t blue = pixel[0];
-			const std::uint8_t green = pixel[1];
-			const std::uint8_t red = pixel[2];
-			if (IsPurpleColor(red, green, blue)) {
-				out.emplace_back(x - halfWidth, y - halfHeight);
-			}
-			pixel += kPixelStride;
-		}
+static const char* SortingMethodToString(SortingMethod method) noexcept {
+	switch (method) {
+	case SortingMethod::CustomPriority:
+		return "Priority";
+	case SortingMethod::FirstColor:
+		return "FirstColor";
+	case SortingMethod::SingleTargetPriority:
+		return "SingleTarget";
+	case SortingMethod::GpuFast:
+		return "GpuFast";
+	default:
+		return "Unknown";
 	}
-}
-
-static bool PickPriorityTarget(std::vector<Vector2>& candidates, Vector2& targetOut) {
-	constexpr int maxCount = 5;
-	constexpr int forSize = 100;
-	constexpr int forSizeSq = forSize * forSize;
-
-	if (candidates.empty()) {
-		return false;
-	}
-
-	std::sort(candidates.begin(), candidates.end(), [](const Vector2& lhs, const Vector2& rhs) {
-		return lhs.y < rhs.y;
-	});
-
-	std::vector<Vector2> forbidden;
-	forbidden.reserve(maxCount + 1);
-	for (const auto& current : candidates) {
-		bool canUpdate = true;
-		if (std::abs(current.x) > trueX || std::abs(current.y) > trueY) {
-			continue;
-		}
-		for (const auto& forb : forbidden) {
-			const auto sum = current + forb;
-			if (sum.LenSq() < forSizeSq || std::abs(current.x + forb.x) < forSize) {
-				canUpdate = false;
-				break;
-			}
-		}
-		if (canUpdate) {
-			forbidden.push_back(current);
-			if (static_cast<int>(forbidden.size()) > maxCount) {
-				break;
-			}
-		}
-	}
-
-	if (forbidden.empty()) {
-		return false;
-	}
-
-	const auto bestIt = std::min_element(forbidden.begin(), forbidden.end(), [](const Vector2& lhs, const Vector2& rhs) {
-		return lhs.LenSq() < rhs.LenSq();
-	});
-	targetOut = *bestIt;
-	return true;
-}
-
-static bool FirstColorSorting(PixelBuffer data, int height, int width, int rowPitch) {
-	const int hWidth = width / 2;
-	const int hHeight = height / 2;
-	const auto bounds = MakeBounds(hWidth, hHeight, trueX, trueY, width, height);
-
-	for (int y = bounds.minY; y < bounds.maxY; ++y) {
-		const auto* pixel = data + (static_cast<size_t>(y) * static_cast<size_t>(rowPitch)) + (static_cast<size_t>(bounds.minX) * kPixelStride);
-		for (int x = bounds.minX; x < bounds.maxX; ++x) {
-			const std::uint8_t blue = pixel[0];
-			const std::uint8_t green = pixel[1];
-			const std::uint8_t red = pixel[2];
-			if (IsPurpleColor(red, green, blue)) {
-				MoveMouseFromScreenPosition(Vector2(x - hWidth, y - hHeight), height, width);
-				return true;
-			}
-			pixel += kPixelStride;
-		}
-	}
-	return false;
 }
 
 // Debug capture utilities write a binary PPM in Test/ for fast, dependency-free output.
@@ -490,88 +412,102 @@ static void TrySaveCapture(PixelBuffer data, int height, int width, int rowPitch
 	}
 }
 
-static bool isZoomedFunc() {
-	return (GetKeyState(VK_RBUTTON) & 0x8000) != 0;
-}
+static bool InitDesktopDuplication() {
+	desktopDuplication.Reset();
+	desktopDuplicationAvailable = false;
 
-static Vector2 FindXhair(PixelBuffer data, int height, int width, int rowPitch) {
-	const int hWidth = width / 2;
-	const int hHeight = height / 2;
-	const Vector2 center(hWidth, hHeight);
-	if (!isZoomedFunc())
-		return center;
-
-	const auto bounds = MakeBounds(hWidth, hHeight, maxX, maxY, width, height);
-	for (int y = bounds.minY; y < bounds.maxY; ++y) {
-		const auto* pixel = data + (static_cast<size_t>(y) * static_cast<size_t>(rowPitch)) + (static_cast<size_t>(bounds.minX) * kPixelStride);
-		for (int x = bounds.minX; x < bounds.maxX; ++x) {
-			const std::uint8_t blue = pixel[0];
-			const std::uint8_t green = pixel[1];
-			const std::uint8_t red = pixel[2];
-			if (red == 0 && blue == 255 && green == 255) { // cyan
-				return Vector2(x, y);
-			}
-			pixel += kPixelStride;
-		}
-	}
-	return center;
-}
-
-Vector2 SaveLastLocation = Vector2(0, 0);
-
-static bool SingleTargetPrioritySorting(PixelBuffer data, int height, int width, int rowPitch) {
-	thread_local std::vector<Vector2> vects;
-	if (vects.capacity() < 4096) {
-		vects.reserve(4096);
-	}
-	vects.clear();
-
-	const int hWidth = width / 2;
-	const int hHeight = height / 2;
-
-	if (!NotfirstRunSingleTarget) {
-		const auto bounds = MakeBounds(hWidth, hHeight, trueX, trueY, width, height);
-		CollectPurpleCandidates(data, rowPitch, hWidth, hHeight, bounds, vects);
-	}
-	else {
-		const int lastX = static_cast<int>((SaveLastLocation.x * (1.0f - speed)) + hWidth);
-		const int lastY = static_cast<int>((SaveLastLocation.y * (1.0f - speed)) + hHeight);
-		const auto bounds = MakeBounds(lastX, lastY, checkingRangeSingleTarget, checkingRangeSingleTarget, width, height);
-		CollectPurpleCandidates(data, rowPitch, hWidth, hHeight, bounds, vects);
-	}
-
-	Vector2 selected(0, 0);
-	if (!PickPriorityTarget(vects, selected)) {
+	ComPtr<IDXGIDevice> dxgiDevice;
+	if (FAILED(lDevice.As(&dxgiDevice))) {
 		return false;
 	}
 
-	SaveLastLocation = selected;
-	MoveMouseFromScreenPosition(SaveLastLocation, height, width);
-	NotfirstRunSingleTarget = true;
-	return true;
-}
-
-static bool CustomPrioritySorting(PixelBuffer data, int height, int width, int rowPitch) {
-	thread_local std::vector<Vector2> vects;
-	if (vects.capacity() < 4096) {
-		vects.reserve(4096);
-	}
-	vects.clear();
-
-	const int hWidth = width / 2;
-	const int hHeight = height / 2;
-	const auto bounds = MakeBounds(hWidth, hHeight, trueX, trueY, width, height);
-	CollectPurpleCandidates(data, rowPitch, hWidth, hHeight, bounds, vects);
-
-	Vector2 selected(0, 0);
-	if (!PickPriorityTarget(vects, selected)) {
+	ComPtr<IDXGIAdapter> adapter;
+	if (FAILED(dxgiDevice->GetAdapter(&adapter))) {
 		return false;
 	}
 
-	MoveMouseFromScreenPosition(selected, height, width);
+	ComPtr<IDXGIOutput> output;
+	if (FAILED(adapter->EnumOutputs(0, &output))) {
+		return false;
+	}
+
+	DXGI_OUTPUT_DESC outputDesc{};
+	if (FAILED(output->GetDesc(&outputDesc))) {
+		return false;
+	}
+	duplicationDesktopRect = outputDesc.DesktopCoordinates;
+
+	ComPtr<IDXGIOutput1> output1;
+	if (FAILED(output.As(&output1))) {
+		return false;
+	}
+
+	HRESULT duplicateResult = output1->DuplicateOutput(lDevice.Get(), &desktopDuplication);
+	if (FAILED(duplicateResult)) {
+		return false;
+	}
+
+	desktopDuplicationAvailable = true;
 	return true;
 }
 
+static bool CaptureFrameWithDesktopDuplication() {
+	if (!desktopDuplicationAvailable || desktopDuplication == nullptr) {
+		return false;
+	}
+
+	DXGI_OUTDUPL_FRAME_INFO frameInfo{};
+	ComPtr<IDXGIResource> frameResource;
+	const HRESULT acquireResult = desktopDuplication->AcquireNextFrame(0, &frameInfo, &frameResource);
+	if (acquireResult == DXGI_ERROR_WAIT_TIMEOUT) {
+		return false;
+	}
+	if (FAILED(acquireResult)) {
+		desktopDuplicationAvailable = false;
+		desktopDuplication.Reset();
+		return false;
+	}
+
+	ComPtr<ID3D11Texture2D> desktopFrame;
+	if (FAILED(frameResource.As(&desktopFrame))) {
+		desktopDuplication->ReleaseFrame();
+		return false;
+	}
+
+	POINT clientOrigin{ 0, 0 };
+	if (!ClientToScreen(game_window, &clientOrigin)) {
+		desktopDuplication->ReleaseFrame();
+		return false;
+	}
+
+	const int sourceLeft = clientOrigin.x - duplicationDesktopRect.left;
+	const int sourceTop = clientOrigin.y - duplicationDesktopRect.top;
+	const int sourceRight = sourceLeft + static_cast<int>(width);
+	const int sourceBottom = sourceTop + static_cast<int>(height);
+	if (sourceLeft < 0 || sourceTop < 0) {
+		desktopDuplication->ReleaseFrame();
+		return false;
+	}
+
+	D3D11_TEXTURE2D_DESC desktopDesc{};
+	desktopFrame->GetDesc(&desktopDesc);
+	if (sourceRight > static_cast<int>(desktopDesc.Width) || sourceBottom > static_cast<int>(desktopDesc.Height)) {
+		desktopDuplication->ReleaseFrame();
+		return false;
+	}
+
+	D3D11_BOX sourceBox{};
+	sourceBox.left = static_cast<UINT>(sourceLeft);
+	sourceBox.top = static_cast<UINT>(sourceTop);
+	sourceBox.front = 0;
+	sourceBox.right = static_cast<UINT>(sourceRight);
+	sourceBox.bottom = static_cast<UINT>(sourceBottom);
+	sourceBox.back = 1;
+
+	lImmediateContext->CopySubresourceRegion(texture.Get(), 0, 0, 0, 0, desktopFrame.Get(), 0, &sourceBox);
+	desktopDuplication->ReleaseFrame();
+	return true;
+}
 
 static bool InitColor() {
 	// ==== FIND WINDOW ==== 
@@ -649,6 +585,14 @@ static bool InitColor() {
 		return false;
 	}
 
+	gpuDetectorAvailable = gpuDetector.Initialize(lDevice.Get(), texture.Get(), static_cast<int>(width), static_cast<int>(height));
+	if (!gpuDetectorAvailable) {
+		cout << "GPU detector unavailable, using CPU modes only" << endl;
+	}
+	if (!InitDesktopDuplication()) {
+		cout << "Desktop Duplication unavailable, using GDI capture fallback" << endl;
+	}
+
 	// REUSE desc FOR FRAMECOPY
 	desc.BindFlags = 0;
 	desc.MiscFlags = 0;
@@ -669,76 +613,136 @@ static bool InitColor() {
 HDC hdc_target;
 
 static bool ScreenGrab(bool runTargeting) {
-
-	//For debugging 
-	static std::uint8_t last_r = 0;
-	static std::uint8_t last_g = 0;
-	static std::uint8_t last_b = 0;
-	std::chrono::high_resolution_clock::time_point start;
-	if (isDebugging)
-		start = std::chrono::high_resolution_clock::now();
+	struct DetectionTimingState {
+		SortingMethod method = SortingMethod::CustomPriority;
+		bool usedGpuPath = false;
+		int sampleCount = 0;
+		double totalMs = 0.0;
+		double minMs = 0.0;
+		double maxMs = 0.0;
+	};
+	static DetectionTimingState timing{};
 
 
 	// ==== SCEENGRAB ==== 
 
-	HDC hDC = nullptr;
-	if (FAILED(gdiSurface->GetDC(true, &hDC))) {
-		return false;
-	}
-	hdc_target = GetDC(game_window);
-	if (hdc_target == nullptr) {
+	if (!CaptureFrameWithDesktopDuplication()) {
+		HDC hDC = nullptr;
+		if (FAILED(gdiSurface->GetDC(true, &hDC))) {
+			return false;
+		}
+		hdc_target = GetDC(game_window);
+		if (hdc_target == nullptr) {
+			gdiSurface->ReleaseDC(nullptr);
+			return false;
+		}
+
+		// === FALLBACK COPY VIA GDI ===
+		while (!BitBlt(hDC, 0, 0, width, height, hdc_target, 0, 0, SRCCOPY)) {
+			cout << "FAILED" << endl;
+			Sleep(1000);
+		}
+
+		// VERY IMPORTANT TO RELEASE BEFORE COPY
+		ReleaseDC(game_window, hdc_target);
 		gdiSurface->ReleaseDC(nullptr);
-		return false;
 	}
 
-	// === THE COPY TEXTURE ===
-	while (!BitBlt(hDC, 0, 0, width, height, hdc_target, 0, 0, SRCCOPY)) {
-		cout << "FAILED" << endl;
-		Sleep(1000);
+	const int frameWidth = static_cast<int>(desc.Width);
+	const int frameHeight = static_cast<int>(desc.Height);
+	const int halfWidth = frameWidth / 2;
+	const int halfHeight = frameHeight / 2;
+
+	bool usedGpuDetection = false;
+	bool targetFound = false;
+	auto detectionStart = std::chrono::high_resolution_clock::now();
+	if (runTargeting && currentSortingMethod == SortingMethod::GpuFast && gpuDetectorAvailable) {
+		const auto bounds = MakeBounds(halfWidth, halfHeight, trueX, trueY, frameWidth, frameHeight);
+		colourbot::GpuDetectionParams params{};
+		params.bounds = bounds;
+		params.centerX = halfWidth;
+		params.centerY = halfHeight;
+
+		Vector2 target{};
+		if (gpuDetector.Detect(lImmediateContext.Get(), params, target)) {
+			MoveMouseFromScreenPosition(target, frameHeight, frameWidth);
+			targetFound = true;
+		}
+		usedGpuDetection = true;
 	}
 
-	// VERY IMPORTANT TO RELEASE BEFORE COPY
-	ReleaseDC(game_window, hdc_target);
-	gdiSurface->ReleaseDC(nullptr);
+	const bool needsCpuMap = (runTargeting && !usedGpuDetection) ||
+		isDebugging ||
+		requestDebugCapture.load(std::memory_order_relaxed);
 
-	// === COPY TO CPU ===
-	D3D11_MAPPED_SUBRESOURCE tempsubsource{};
-	lImmediateContext->CopyResource(frameCopyTexture.Get(), texture.Get());
-	const HRESULT hr = lImmediateContext->Map(frameCopyTexture.Get(), 0, D3D11_MAP_READ, 0, &tempsubsource);
-	if (FAILED(hr)) {
-		return false;
+	if (needsCpuMap) {
+		D3D11_MAPPED_SUBRESOURCE mapped{};
+		lImmediateContext->CopyResource(frameCopyTexture.Get(), texture.Get());
+		const HRESULT mapResult = lImmediateContext->Map(frameCopyTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+		if (FAILED(mapResult)) {
+			return false;
+		}
+
+		const auto* data = static_cast<const std::uint8_t*>(mapped.pData);
+		const int rowPitch = static_cast<int>(mapped.RowPitch);
+
+		if (runTargeting && !usedGpuDetection) {
+			if (currentSortingMethod == SortingMethod::GpuFast) {
+				Vector2 fallbackTarget{};
+				targetFound = cpuDetector.CustomPriority(data, frameHeight, frameWidth, rowPitch, trueX, trueY, fallbackTarget);
+				if (targetFound) {
+					MoveMouseFromScreenPosition(fallbackTarget, frameHeight, frameWidth);
+				}
+			}
+			else {
+				targetFound = RunCpuSorting(data, frameHeight, frameWidth, rowPitch);
+			}
+		}
+
+		TrySaveCapture(data, frameHeight, frameWidth, rowPitch);
+		lImmediateContext->Unmap(frameCopyTexture.Get(), 0);
 	}
-	const auto* data = static_cast<const std::uint8_t*>(tempsubsource.pData);
-	const int rowPitch = static_cast<int>(tempsubsource.RowPitch);
 
-	if (runTargeting && !currentSortingMethod(data, static_cast<int>(desc.Height), static_cast<int>(desc.Width), rowPitch) && flickAim)
+	if (runTargeting && isDebugging) {
+		const auto detectionEnd = std::chrono::high_resolution_clock::now();
+		const double detectionMs = std::chrono::duration<double, std::milli>(detectionEnd - detectionStart).count();
+		const bool usingGpuPath = usedGpuDetection;
+
+		if (timing.sampleCount == 0 || timing.method != currentSortingMethod || timing.usedGpuPath != usingGpuPath) {
+			timing.method = currentSortingMethod;
+			timing.usedGpuPath = usingGpuPath;
+			timing.sampleCount = 0;
+			timing.totalMs = 0.0;
+			timing.minMs = detectionMs;
+			timing.maxMs = detectionMs;
+		}
+
+		++timing.sampleCount;
+		timing.totalMs += detectionMs;
+		timing.minMs = (std::min)(timing.minMs, detectionMs);
+		timing.maxMs = (std::max)(timing.maxMs, detectionMs);
+
+		constexpr int kPrintEverySamples = 30;
+		if ((timing.sampleCount % kPrintEverySamples) == 0) {
+			const double averageMs = timing.totalMs / timing.sampleCount;
+			cout << "[DetectTiming] mode=" << SortingMethodToString(currentSortingMethod)
+				<< " path=" << (usingGpuPath ? "GPU" : "CPU")
+				<< " current_ms=" << detectionMs
+				<< " avg_ms=" << averageMs
+				<< " min_ms=" << timing.minMs
+				<< " max_ms=" << timing.maxMs
+				<< " found=" << (targetFound ? 1 : 0)
+				<< " samples=" << timing.sampleCount
+				<< endl;
+		}
+	}
+
+	if (runTargeting && !targetFound && flickAim)
 	{
 		trueX = maxX;
 		trueY = maxY;
 	}
 
-	// TESTING FRAME UPDATE, REMOVE THIS
-	if (isDebugging)
-	{
-		const int debugX = 100;
-		const int debugY = 100;
-		const int base = debugY * rowPitch + debugX * kPixelStride;
-		const std::uint8_t red = data[base + 2];
-		const std::uint8_t green = data[base + 1];
-		const std::uint8_t blue = data[base];
-		if ((last_b != blue || last_g != green || last_r != red) && (red > 0 && blue > 0 && green > 0)) {
-			auto finish = std::chrono::high_resolution_clock::now();
-			std::chrono::duration<double> elapsed = finish - start;
-			cout << "Time: " << (elapsed.count() * 1000) << "ms" << endl;
-			//logging::INFO(  "Time: " + std::to_string((elapsed.count() * 1000)));
-			start = std::chrono::high_resolution_clock::now();
-			last_b = blue;
-			last_g = green;
-			last_r = red;
-		}
-	}
-	TrySaveCapture(data, static_cast<int>(desc.Height), static_cast<int>(desc.Width), rowPitch);
-	lImmediateContext->Unmap(frameCopyTexture.Get(), 0);
 	return true;
 }
 
@@ -775,7 +779,7 @@ static void ScreenGrabMain() {
 				//}
 				/*if (isDebugging)
 					system("cls");*/
-				NotfirstRunSingleTarget = false;
+				cpuDetector.ResetSingleTarget();
 			}
 		}
 		else {
@@ -789,185 +793,91 @@ int sortingCounter = 0;
 const char* currentSortingMethodName;
 const char* currentSortingMethodDescript;
 void UpdateSortingMethod(int id) {
-	switch (id % 3)
+	cpuDetector.ResetSingleTarget();
+	switch (id % 4)
 	{
 	case 0:
-		currentSortingMethod = CustomPrioritySorting;
+		currentSortingMethod = SortingMethod::CustomPriority;
 		currentSortingMethodName = "Priority Sorter";
 		currentSortingMethodDescript = "A bit slower, but priorities heads";
 		break;
 	case 1:
-		currentSortingMethod = FirstColorSorting;
+		currentSortingMethod = SortingMethod::FirstColor;
 		currentSortingMethodName = "First Color Sorter";
 		currentSortingMethodDescript = "Fast, but no sorting";
 		break;
 	case 2:
-		currentSortingMethod = SingleTargetPrioritySorting;
+		currentSortingMethod = SortingMethod::SingleTargetPriority;
 		currentSortingMethodName = "Target Priority Sorter";
 		currentSortingMethodDescript = "Locks on one";
+		break;
+	case 3:
+		currentSortingMethod = SortingMethod::GpuFast;
+		currentSortingMethodName = "GPU Fast Detector";
+		currentSortingMethodDescript = gpuDetectorAvailable ? "Fastest path using compute shader" : "GPU unavailable, falls back to CPU";
 		break;
 	default:
 		break;
 	}
 }
 
-// Config parsing/writing uses typed conversions to avoid C-style atof behavior.
-static std::string RemoveWhitespace(std::string_view source) {
-	std::string result;
-	result.reserve(source.size());
-	for (const char ch : source) {
-		if (!std::isspace(static_cast<unsigned char>(ch))) {
-			result.push_back(ch);
-		}
-	}
-	return result;
-}
-
-template <typename TInt>
-static bool ParseInteger(std::string_view text, TInt& output) {
-	const auto begin = text.data();
-	const auto end = begin + text.size();
-	const auto [ptr, ec] = std::from_chars(begin, end, output);
-	return ec == std::errc{} && ptr == end;
-}
-
-static bool ParseFloat(std::string_view text, float& output) {
-	std::string temp(text);
-	char* parseEnd = nullptr;
-	const float value = std::strtof(temp.c_str(), &parseEnd);
-	if (parseEnd != (temp.c_str() + temp.size())) {
-		return false;
-	}
-	output = value;
-	return true;
-}
-
-static bool ParseBool(std::string_view text, bool& output) {
-	int numeric = 0;
-	if (ParseInteger(text, numeric)) {
-		output = numeric != 0;
-		return true;
-	}
-
-	if (text == "true" || text == "TRUE") {
-		output = true;
-		return true;
-	}
-	if (text == "false" || text == "FALSE") {
-		output = false;
-		return true;
-	}
-	return false;
-}
-
 static bool ReadConfig() {
-	std::ifstream configFile("config.txt");
-	if (!configFile.is_open()) {
+	colourbot::ConfigData config{};
+	config.speed = speed;
+	config.maxX = maxX;
+	config.maxY = maxY;
+	config.offset = { offset[0], offset[1] };
+	config.flickAim = flickAim;
+	config.flickAimTime = flickAimTime;
+	config.full360 = full360;
+	config.sortingCounter = sortingCounter;
+	config.holdKey = holdKey;
+	config.isHold = isHold;
+	config.invertHold = invertHold;
+	config.recoilControl = recoilControl;
+	config.overloadManualInputs = overloadManualInputs;
+
+	if (!colourbot::LoadConfigFile("config.txt", config)) {
 		return false;
 	}
 
-	std::string line;
-	int offsetX = offset[0];
-	int offsetY = offset[1];
-
-	while (std::getline(configFile, line)) {
-		const std::string cleaned = RemoveWhitespace(line);
-		if (cleaned.empty() || cleaned[0] == '#') {
-			continue;
-		}
-
-		const size_t delimiterPos = cleaned.find('=');
-		if (delimiterPos == std::string::npos || delimiterPos == 0 || delimiterPos + 1 >= cleaned.size()) {
-			continue;
-		}
-
-		const std::string_view name(cleaned.data(), delimiterPos);
-		const std::string_view value(cleaned.data() + delimiterPos + 1, cleaned.size() - delimiterPos - 1);
-
-		if (name == "speed") {
-			float parsed = speed;
-			if (ParseFloat(value, parsed)) speed = parsed;
-		}
-		else if (name == "maxX") {
-			ParseInteger(value, maxX);
-		}
-		else if (name == "maxY") {
-			ParseInteger(value, maxY);
-		}
-		else if (name == "offsetX") {
-			ParseInteger(value, offsetX);
-		}
-		else if (name == "offsetY") {
-			ParseInteger(value, offsetY);
-		}
-		else if (name == "flickAim") {
-			ParseBool(value, flickAim);
-		}
-		else if (name == "flickAimTime") {
-			ParseInteger(value, flickAimTime);
-		}
-		else if (name == "full360") {
-			ParseInteger(value, full360);
-		}
-		else if (name == "sortingCounter") {
-			ParseInteger(value, sortingCounter);
-		}
-		else if (name == "holdKey") {
-			ParseInteger(value, holdKey);
-		}
-		else if (name == "isHold") {
-			ParseBool(value, isHold);
-		}
-		else if (name == "invertHold") {
-			ParseBool(value, invertHold);
-		}
-		else if (name == "recoilControl") {
-			ParseBool(value, recoilControl);
-		}
-		else if (name == "overloadManualInputs") {
-			ParseBool(value, overloadManualInputs);
-		}
-	}
-
-	offset[0] = offsetX;
-	offset[1] = offsetY;
+	speed = config.speed;
+	maxX = config.maxX;
+	maxY = config.maxY;
+	offset[0] = config.offset[0];
+	offset[1] = config.offset[1];
+	flickAim = config.flickAim;
+	flickAimTime = config.flickAimTime;
+	full360 = config.full360;
+	sortingCounter = config.sortingCounter;
+	holdKey = config.holdKey;
+	isHold = config.isHold;
+	invertHold = config.invertHold;
+	recoilControl = config.recoilControl;
+	overloadManualInputs = config.overloadManualInputs;
 	return true;
 }
 
 static void SaveConfig() {
-	std::ofstream configFile("config.txt", std::ios::trunc);
-	if (!configFile.is_open()) {
+	colourbot::ConfigData config{};
+	config.speed = speed;
+	config.maxX = maxX;
+	config.maxY = maxY;
+	config.offset = { offset[0], offset[1] };
+	config.flickAim = flickAim;
+	config.flickAimTime = flickAimTime;
+	config.full360 = full360;
+	config.sortingCounter = sortingCounter;
+	config.holdKey = holdKey;
+	config.isHold = isHold;
+	config.invertHold = invertHold;
+	config.recoilControl = recoilControl;
+	config.overloadManualInputs = overloadManualInputs;
+
+	if (!colourbot::SaveConfigFile("config.txt", config, holdKeyIndex, holdKeysCodes, kHoldKeyCount)) {
 		cout << "Failed to save config" << endl;
 		return;
 	}
-
-	const int offsetX = offset[0];
-	const int offsetY = offset[1];
-	const auto writeSetting = [&configFile](std::string_view name, const auto value) {
-		configFile << name << "=" << value << '\n';
-	};
-
-	writeSetting("speed", speed);
-	writeSetting("maxX", maxX);
-	writeSetting("maxY", maxY);
-	writeSetting("offsetX", offsetX);
-	writeSetting("offsetY", offsetY);
-	writeSetting("flickAim", static_cast<int>(flickAim));
-	writeSetting("flickAimTime", flickAimTime);
-	writeSetting("full360", full360);
-	writeSetting("sortingCounter", sortingCounter);
-	writeSetting("recoilControl", static_cast<int>(recoilControl));
-	writeSetting("overloadManualInputs", static_cast<int>(overloadManualInputs));
-
-	configFile << "#All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes\n";
-	if (holdKeyIndex > 0 && holdKeyIndex < kHoldKeyCount) {
-		writeSetting("holdKey", holdKeysCodes[holdKeyIndex]);
-	}
-	else {
-		writeSetting("holdKey", holdKey);
-	}
-	writeSetting("isHold", static_cast<int>(isHold));
-	writeSetting("invertHold", static_cast<int>(invertHold));
 	cout << "Saved config" << endl;
 }
 

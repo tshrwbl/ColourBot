@@ -32,6 +32,14 @@ msbuild "BlueFire.sln" /t:Build /p:Configuration=Debug /p:Platform=x64 /m /nolog
 ## Runtime Controls
 - Use the **Capture ScreenGrab** button in the UI to write a frame to `Test/`.
 - Captures are saved as binary PPM files named like `screengrab_YYYYMMDD_HHMMSS_N.ppm`.
+- Sorting now includes **GPU Fast Detector** (compute-shader path). If GPU init fails, it automatically falls back to CPU detection.
+
+## Project Structure
+- `BlueFireColorbot/main.cpp`: UI, app loop, D3D9 window/rendering, and high-level orchestration.
+- `BlueFireColorbot/ConfigIO.h/.cpp`: typed config load/save (`config.txt`).
+- `BlueFireColorbot/DetectionCommon.h`: shared math/types and color predicates.
+- `BlueFireColorbot/CpuDetector.h/.cpp`: CPU scanning/sorting modes.
+- `BlueFireColorbot/GpuColorDetector.h/.cpp`: compute-shader color detection pipeline.
 
 ## Notes
 - This is a native C++ (`.vcxproj`) solution. `dotnet build` is not the correct tool for this project and can fail with missing `Microsoft.Cpp.Default.props`.

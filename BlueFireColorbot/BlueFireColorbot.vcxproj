@@ -151,6 +151,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ConfigIO.cpp" />
+    <ClCompile Include="CpuDetector.cpp" />
+    <ClCompile Include="GpuColorDetector.cpp" />
     <ClCompile Include="imgui.cpp" />
     <ClCompile Include="imgui_draw.cpp" />
     <ClCompile Include="imgui_impl_dx9.cpp" />
@@ -168,6 +171,10 @@
     <None Include="Resource.aps" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ConfigIO.h" />
+    <ClInclude Include="CpuDetector.h" />
+    <ClInclude Include="DetectionCommon.h" />
+    <ClInclude Include="GpuColorDetector.h" />
     <ClInclude Include="imconfig.h" />
     <ClInclude Include="imgui.h" />
     <ClInclude Include="imgui_impl_dx9.h" />

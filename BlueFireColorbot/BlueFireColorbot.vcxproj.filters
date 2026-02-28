@@ -42,6 +42,15 @@
     <ClCompile Include="imgui_impl_win32.cpp">
       <Filter>sources</Filter>
     </ClCompile>
+    <ClCompile Include="ConfigIO.cpp">
+      <Filter>sources</Filter>
+    </ClCompile>
+    <ClCompile Include="CpuDetector.cpp">
+      <Filter>sources</Filter>
+    </ClCompile>
+    <ClCompile Include="GpuColorDetector.cpp">
+      <Filter>sources</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Image Include="Icon.ico">
@@ -88,6 +97,18 @@
       <Filter>imgui</Filter>
     </ClInclude>
     <ClInclude Include="interception.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ConfigIO.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CpuDetector.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DetectionCommon.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GpuColorDetector.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
