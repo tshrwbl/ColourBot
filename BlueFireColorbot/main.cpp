@@ -7,6 +7,9 @@
 #include <WinUser.h>
 #include "imgui.h"
 #include "imgui_impl_dx9.h"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <iostream>
 #include <dxgi.h>
@@ -15,7 +18,17 @@
 #include <stdlib.h>
 #include <fstream>
 #include <chrono> // for high_resolution_clock
-#include <list>
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <ctime>
+#include <charconv>
+#include <vector>
+#include <atomic>
+#include <filesystem>
+#include <string_view>
 #include <wrl/client.h>
 #include <thread>
 #include "interception.h"
@@ -24,10 +37,9 @@
 #pragma comment(lib,"d3d11.lib")
 using namespace std;
 
-#define PROCESS_NAME L"VALORANT  " 
-//#define PROCESS_NAME L"Untitled - Paint" 
+//#define PROCESS_NAME L"VALORANT  " 
+#define PROCESS_NAME L"Untitled - Paint" 
 
-#define NAMEOF(name) #name
 #define DEBUGDIR L"Test"
 
 using Microsoft::WRL::ComPtr;
@@ -51,21 +63,19 @@ D3D_FEATURE_LEVEL gFeatureLevels[] = {
 UINT gNumFeatureLevels = ARRAYSIZE(gFeatureLevels);
 
 
-#define M_PI 3.14159265358979323846  
-#define RADTODEG 180 / M_PI
-#define DEGTORAD M_PI / 180 
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kRadToDeg = 180.0 / kPi;
+constexpr double kDegToRad = kPi / 180.0;
+constexpr int kPixelStride = 4;
 
 struct Vector2 {
 	int x;
 	int y;
-	Vector2(int X, int Y) {
-		x = X;
-		y = Y;
+	constexpr Vector2(int X, int Y) noexcept : x(X), y(Y) {}
+	[[nodiscard]] constexpr int LenSq() const noexcept {
+		return (x * x) + (y * y);
 	}
-	float Len() {
-		return sqrt(pow(x, 2) + pow(y, 2));
-	}
-	Vector2 operator+(const Vector2& a) const
+	[[nodiscard]] constexpr Vector2 operator+(const Vector2& a) const noexcept
 	{
 		return Vector2(a.x + x, a.y + y);
 	}
@@ -78,7 +88,7 @@ bool isDebugging = false;
 bool NotfirstRunSingleTarget = false;
 int flickAimTime = 20;
 int checkingRangeSingleTarget = 20;
-float speed = 0.2;
+float speed = 0.2f;
 int maxX = 600;
 int maxY = 300;
 //inline float recoilms = 0.2;
@@ -105,8 +115,8 @@ int recoilOffset = 0;
 bool recoilControlStart = false;
 
 bool isZoomed = false;
-const int hold_arry_size = 15;
-static const char* holdKeys[hold_arry_size]{
+constexpr int kHoldKeyCount = 15;
+static const char* holdKeys[kHoldKeyCount]{
    "Left mouse button",
    "Right mouse button",
    "Middle mouse button",
@@ -124,7 +134,7 @@ static const char* holdKeys[hold_arry_size]{
    "Right CONTROL key",
 };
 
-static const int holdKeysCodes[hold_arry_size]{
+static const int holdKeysCodes[kHoldKeyCount]{
    VK_LBUTTON,
    VK_RBUTTON,
    VK_MBUTTON,
@@ -157,13 +167,16 @@ uint32_t width;
 uint32_t height;
 ComPtr<IDXGISurface1> gdiSurface;
 ComPtr<ID3D11Texture2D> texture;
+ComPtr<ID3D11Texture2D> frameCopyTexture;
 HWND game_window;
+std::atomic<bool> requestDebugCapture{ false };
+std::atomic<unsigned long long> captureCounter{ 0ULL };
 
 InterceptionContext context;
 InterceptionDevice device;
 InterceptionStroke stroke;
 
-void NormalMouse() {
+static void NormalMouse() {
 	while (interception_receive(context, device = interception_wait(context), &stroke, 1) > 0) {
 		if (interception_is_mouse(device))
 		{
@@ -173,7 +186,7 @@ void NormalMouse() {
 	}
 }
 
-void InitMoveMouse() {
+static void InitMoveMouse() {
 	cout << "Loading Interception..." << endl;
 
 	context = interception_create_context();
@@ -193,7 +206,7 @@ void InitMoveMouse() {
 	normal.detach();
 }
 
-void MoveMouse(int dx, int dy) {
+static void MoveMouse(int dx, int dy) {
 	InterceptionMouseStroke& mstroke = *(InterceptionMouseStroke*)&stroke;
 	mstroke.flags = 0;
 	mstroke.information = 0;
@@ -205,35 +218,36 @@ void MoveMouse(int dx, int dy) {
 	interception_send(context, device, &stroke, 1);
 }
 
-typedef bool(*ColorSortingMethod)(char*, int, int);
+using PixelBuffer = const std::uint8_t*;
+typedef bool(*ColorSortingMethod)(PixelBuffer, int, int, int);
 ColorSortingMethod currentSortingMethod;
 
-void SetIsZoomed() { // CALL THIS EVERY FRAME
+static void SetIsZoomed() { // CALL THIS EVERY FRAME
 	isZoomed = GetAsyncKeyState(VK_RBUTTON);
 }
 
-int Full360() {
+static int Full360() {
 	return isZoomed ? full360 : (full360 * 8 / 10);
 }
 
-int GetCoordsX(int delta, int total) {
+static int GetCoordsX(int delta, int total) {
 
 	double lookAt = delta * 2.0 / total;
-	double degrees = atan(lookAt * tan((isZoomed ? 41.5 : 52.0) * DEGTORAD)) * RADTODEG;
-	return (Full360() * degrees) / 360;
+	double degrees = atan(lookAt * tan((isZoomed ? 41.5 : 52.0) * kDegToRad)) * kRadToDeg;
+	return static_cast<int>((Full360() * degrees) / 360);
 }
 
-int GetCoordsY(int delta, int total) {
+static int GetCoordsY(int delta, int total) {
 
 	double lookAt = delta * 2.0 / total;
-	double degrees = atan(lookAt * tan((isZoomed ? 26.5 : 36) * DEGTORAD)) * RADTODEG;
-	return (Full360() * degrees) / 360;
+	double degrees = atan(lookAt * tan((isZoomed ? 26.5 : 36) * kDegToRad)) * kRadToDeg;
+	return static_cast<int>((Full360() * degrees) / 360);
 }
 
 std::chrono::high_resolution_clock::time_point timerStart;
-int timeDiff;
+long long timeDiff;
 
-void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
+static void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 	SetIsZoomed();
 
 	if (overloadManualInputs && GetAsyncKeyState(VK_LBUTTON))
@@ -259,7 +273,7 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 			timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(end - timerStart).count();
 			if (timeDiff > 150)
 			{
-				recoilOffset = ((timeDiff - 150) / 50);
+				recoilOffset = static_cast<int>((timeDiff - 150) / 50);
 
 				if (recoilOffset > 6)
 				{
@@ -297,106 +311,207 @@ void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 		trueY = onTargetLockY;
 	}
 	else {
-		MoveMouse(moveX * speed, moveY * speed);
+		MoveMouse(static_cast<int>(std::lround(moveX * speed)), static_cast<int>(std::lround(moveY * speed)));
 	}
 }
 
-bool IsPurpleColor(unsigned short red, unsigned short green, unsigned short blue) {
+static bool IsPurpleColor(std::uint8_t red, std::uint8_t green, std::uint8_t blue) {
 	// updated PURPLE FROM https://www.unknowncheats.me/forum/valorant/437368-updated-colors-pixel-bot-act-4-a.html
 	if (green >= 170) {
 		return false;
 	}
 
 	if (green >= 120) {
-		return abs(red - blue) <= 8 &&
+		return std::abs(int(red) - int(blue)) <= 8 &&
 			red - green >= 50 &&
 			blue - green >= 50 &&
 			red >= 105 &&
 			blue >= 105;
 	}
 
-	return abs(red - blue) <= 13 &&
+	return std::abs(int(red) - int(blue)) <= 13 &&
 		red - green >= 60 &&
 		blue - green >= 60 &&
 		red >= 110 &&
 		blue >= 100;
-
-	//return red > 240 && green > 90 && green < 190 && blue > 240; // OLD COLOR FUNCTION
 }
 
-bool FirstColorSorting(char* data, int height, int width) {
-	int hWidth = width / 2;
-	int hHeight = height / 2;
-	for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
-		for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
-			int base = (x + y * desc.Width) * 4;
-			unsigned short red = data[base + 2] & 255;
-			unsigned short green = data[base + 1] & 255;
-			unsigned short blue = data[base] & 255;
+// Bounds helpers keep all pixel scans clipped to the mapped frame.
+struct ScanBounds {
+	int minX;
+	int maxX;
+	int minY;
+	int maxY;
+};
+
+static ScanBounds MakeBounds(int centerX, int centerY, int rangeX, int rangeY, int width, int height) {
+	const int boundedRangeX = (std::max)(0, rangeX);
+	const int boundedRangeY = (std::max)(0, rangeY);
+	return {
+		(std::max)(0, centerX - boundedRangeX),
+		(std::min)(width, centerX + boundedRangeX),
+		(std::max)(0, centerY - boundedRangeY),
+		(std::min)(height, centerY + boundedRangeY)
+	};
+}
+
+static void CollectPurpleCandidates(PixelBuffer data, int rowPitch, int halfWidth, int halfHeight, const ScanBounds& bounds, std::vector<Vector2>& out) {
+	for (int y = bounds.minY; y < bounds.maxY; ++y) {
+		const auto* pixel = data + (static_cast<size_t>(y) * static_cast<size_t>(rowPitch)) + (static_cast<size_t>(bounds.minX) * kPixelStride);
+		for (int x = bounds.minX; x < bounds.maxX; ++x) {
+			const std::uint8_t blue = pixel[0];
+			const std::uint8_t green = pixel[1];
+			const std::uint8_t red = pixel[2];
+			if (IsPurpleColor(red, green, blue)) {
+				out.emplace_back(x - halfWidth, y - halfHeight);
+			}
+			pixel += kPixelStride;
+		}
+	}
+}
+
+static bool PickPriorityTarget(std::vector<Vector2>& candidates, Vector2& targetOut) {
+	constexpr int maxCount = 5;
+	constexpr int forSize = 100;
+	constexpr int forSizeSq = forSize * forSize;
+
+	if (candidates.empty()) {
+		return false;
+	}
+
+	std::sort(candidates.begin(), candidates.end(), [](const Vector2& lhs, const Vector2& rhs) {
+		return lhs.y < rhs.y;
+	});
+
+	std::vector<Vector2> forbidden;
+	forbidden.reserve(maxCount + 1);
+	for (const auto& current : candidates) {
+		bool canUpdate = true;
+		if (std::abs(current.x) > trueX || std::abs(current.y) > trueY) {
+			continue;
+		}
+		for (const auto& forb : forbidden) {
+			const auto sum = current + forb;
+			if (sum.LenSq() < forSizeSq || std::abs(current.x + forb.x) < forSize) {
+				canUpdate = false;
+				break;
+			}
+		}
+		if (canUpdate) {
+			forbidden.push_back(current);
+			if (static_cast<int>(forbidden.size()) > maxCount) {
+				break;
+			}
+		}
+	}
+
+	if (forbidden.empty()) {
+		return false;
+	}
+
+	const auto bestIt = std::min_element(forbidden.begin(), forbidden.end(), [](const Vector2& lhs, const Vector2& rhs) {
+		return lhs.LenSq() < rhs.LenSq();
+	});
+	targetOut = *bestIt;
+	return true;
+}
+
+static bool FirstColorSorting(PixelBuffer data, int height, int width, int rowPitch) {
+	const int hWidth = width / 2;
+	const int hHeight = height / 2;
+	const auto bounds = MakeBounds(hWidth, hHeight, trueX, trueY, width, height);
+
+	for (int y = bounds.minY; y < bounds.maxY; ++y) {
+		const auto* pixel = data + (static_cast<size_t>(y) * static_cast<size_t>(rowPitch)) + (static_cast<size_t>(bounds.minX) * kPixelStride);
+		for (int x = bounds.minX; x < bounds.maxX; ++x) {
+			const std::uint8_t blue = pixel[0];
+			const std::uint8_t green = pixel[1];
+			const std::uint8_t red = pixel[2];
 			if (IsPurpleColor(red, green, blue)) {
 				MoveMouseFromScreenPosition(Vector2(x - hWidth, y - hHeight), height, width);
 				return true;
 			}
+			pixel += kPixelStride;
 		}
 	}
 	return false;
 }
 
-int counter = 0;
-void GetImageForDebugging(char* data, int height, int width) {
-	return;
-	int hWidth = width / 2;
-	int hHeight = height / 2;
-	//save ofstream file in debug folder
-	ofstream img("Test/debugpic" + std::to_string(counter) + ".ppm"); //#include <fstream>
-	ofstream img2("Test/debugpicDetectionVectors" + std::to_string(counter++) + ".ppm"); //#include <fstream>
+// Debug capture utilities write a binary PPM in Test/ for fast, dependency-free output.
+static std::string BuildCapturePath() {
+	namespace fs = std::filesystem;
+	fs::create_directories(DEBUGDIR);
 
-	img << "P3" << endl;
-	img << trueX * 2 << endl;
-	img << trueY * 2 << endl;
-	img << "255" << endl;
+	const auto now = std::chrono::system_clock::now();
+	const std::time_t timestamp = std::chrono::system_clock::to_time_t(now);
+	std::tm localTime{};
+	localtime_s(&localTime, &timestamp);
 
-	img2 << "P3" << endl;
-	img2 << trueX * 2 << endl;
-	img2 << trueY * 2 << endl;
-	img2 << "255" << endl;
+	char timeBuffer[32]{};
+	std::strftime(timeBuffer, sizeof(timeBuffer), "%Y%m%d_%H%M%S", &localTime);
+	const auto id = captureCounter.fetch_add(1, std::memory_order_relaxed);
+	fs::path outPath = fs::path(DEBUGDIR) / ("screengrab_" + std::string(timeBuffer) + "_" + std::to_string(id) + ".ppm");
+	return outPath.string();
+}
 
-	for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
-		for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
-			int base = (x + y * desc.Width) * 4;
-			unsigned short red = data[base + 2] & 255;
-			unsigned short green = data[base + 1] & 255;
-			unsigned short blue = data[base] & 255;
-			img << red << " " << green << " " << blue << "\n";
-			if (IsPurpleColor(red, green, blue))
-				img2 << red << " " << green << " " << blue << "\n";
-			else
-				img2 << 0 << " " << 0 << " " << 0 << "\n";
-		}
+static bool WriteCaptureToPpm(PixelBuffer data, int height, int width, int rowPitch, const std::string& filePath) {
+	std::ofstream output(filePath, std::ios::binary);
+	if (!output.is_open()) {
+		return false;
 	}
 
-	cout << counter << " Images saved" << endl;
+	output << "P6\n" << width << " " << height << "\n255\n";
+	std::vector<std::uint8_t> rgbRow(static_cast<size_t>(width) * 3U);
+	for (int y = 0; y < height; ++y) {
+		const auto* pixel = data + (static_cast<size_t>(y) * static_cast<size_t>(rowPitch));
+		for (int x = 0; x < width; ++x) {
+			const size_t outBase = static_cast<size_t>(x) * 3U;
+			rgbRow[outBase + 0] = pixel[2];
+			rgbRow[outBase + 1] = pixel[1];
+			rgbRow[outBase + 2] = pixel[0];
+			pixel += kPixelStride;
+		}
+		output.write(reinterpret_cast<const char*>(rgbRow.data()), static_cast<std::streamsize>(rgbRow.size()));
+	}
+	return static_cast<bool>(output);
 }
 
-bool isZoomedFunc() {
-	return GetKeyState(VK_RBUTTON), (VK_LBUTTON);
+static void TrySaveCapture(PixelBuffer data, int height, int width, int rowPitch) {
+	if (!requestDebugCapture.exchange(false, std::memory_order_relaxed)) {
+		return;
+	}
+
+	const std::string capturePath = BuildCapturePath();
+	if (WriteCaptureToPpm(data, height, width, rowPitch, capturePath)) {
+		cout << "Saved capture to: " << capturePath << endl;
+	}
+	else {
+		cout << "Failed to save capture: " << capturePath << endl;
+	}
 }
 
-Vector2 FindXhair(char* data, int height, int width) {
-	int hWidth = width / 2;
-	int hHeight = height / 2;
-	Vector2 center = Vector2(hWidth, hHeight);
+static bool isZoomedFunc() {
+	return (GetKeyState(VK_RBUTTON) & 0x8000) != 0;
+}
+
+static Vector2 FindXhair(PixelBuffer data, int height, int width, int rowPitch) {
+	const int hWidth = width / 2;
+	const int hHeight = height / 2;
+	const Vector2 center(hWidth, hHeight);
 	if (!isZoomedFunc())
 		return center;
-	for (int y = hHeight - maxY; y < hHeight + maxY; y++) {
-		for (int x = hWidth - maxX; x < hWidth + maxX; x++) {
-			int base = (x + y * desc.Width) * 4;
-			unsigned short red = data[base + 2] & 255;
-			unsigned short green = data[base + 1] & 255;
-			unsigned short blue = data[base] & 255;
+
+	const auto bounds = MakeBounds(hWidth, hHeight, maxX, maxY, width, height);
+	for (int y = bounds.minY; y < bounds.maxY; ++y) {
+		const auto* pixel = data + (static_cast<size_t>(y) * static_cast<size_t>(rowPitch)) + (static_cast<size_t>(bounds.minX) * kPixelStride);
+		for (int x = bounds.minX; x < bounds.maxX; ++x) {
+			const std::uint8_t blue = pixel[0];
+			const std::uint8_t green = pixel[1];
+			const std::uint8_t red = pixel[2];
 			if (red == 0 && blue == 255 && green == 255) { // cyan
 				return Vector2(x, y);
 			}
+			pixel += kPixelStride;
 		}
 	}
 	return center;
@@ -404,202 +519,61 @@ Vector2 FindXhair(char* data, int height, int width) {
 
 Vector2 SaveLastLocation = Vector2(0, 0);
 
-bool SingleTargetPrioritySorting(char* data, int height, int width) {
-	const int maxCount = 5;
-	const int forSize = 100;
-
-	list<Vector2> vects;
-	int hWidth = width / 2;
-	int hHeight = height / 2;
-	//Vector2 xhair = FindXhair(data, height, width);
-
-
-	try
-	{
-		if (!NotfirstRunSingleTarget)
-		{
-			for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
-				for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
-					int base = (x + y * desc.Width) * 4;
-					unsigned short red = data[base + 2] & 255;
-					unsigned short green = data[base + 1] & 255;
-					unsigned short blue = data[base] & 255;
-					if (IsPurpleColor(red, green, blue)) {
-						vects.push_back(Vector2(x - hWidth, y - hHeight));
-						/*if (recoil)
-						{
-							vects.push_back(Vector2(x - xhair.x, y - xhair.y));
-						}
-						else
-						{
-							vects.push_back(Vector2(x - hWidth, y - hHeight));
-						}*/
-					}
-				}
-			}
-		}
-		else
-		{
-			int lastX = SaveLastLocation.x * (1 - speed) + hWidth;
-			int lastY = SaveLastLocation.y * (1 - speed) + hHeight;
-
-			for (int y = lastY - checkingRangeSingleTarget; y < lastX + checkingRangeSingleTarget; y++) {
-				if (y >= hHeight || y < 1)
-					break;
-				for (int x = lastX - checkingRangeSingleTarget; x < lastX + checkingRangeSingleTarget; x++) {
-					if (x >= hWidth || x < 1)
-						break;
-					int base = (x + y * desc.Width) * 4;
-					unsigned short red = data[base + 2] & 255;
-					unsigned short green = data[base + 1] & 255;
-					unsigned short blue = data[base] & 255;
-					if (IsPurpleColor(red, green, blue)) {
-						vects.push_back(Vector2(x - hWidth, y - hHeight));
-						/*if (recoil)
-						{
-							vects.push_back(Vector2(x - xhair.x, y - xhair.y));
-						}
-						else
-						{
-							vects.push_back(Vector2(x - hWidth, y - hHeight));
-						}*/
-					}
-				}
-			}
-		}
-
+static bool SingleTargetPrioritySorting(PixelBuffer data, int height, int width, int rowPitch) {
+	thread_local std::vector<Vector2> vects;
+	if (vects.capacity() < 4096) {
+		vects.reserve(4096);
 	}
-	catch (const std::exception&)
-	{
-		cout << "Exception occured on target priority checks " << endl;
-		NotfirstRunSingleTarget = false;
+	vects.clear();
+
+	const int hWidth = width / 2;
+	const int hHeight = height / 2;
+
+	if (!NotfirstRunSingleTarget) {
+		const auto bounds = MakeBounds(hWidth, hHeight, trueX, trueY, width, height);
+		CollectPurpleCandidates(data, rowPitch, hWidth, hHeight, bounds, vects);
+	}
+	else {
+		const int lastX = static_cast<int>((SaveLastLocation.x * (1.0f - speed)) + hWidth);
+		const int lastY = static_cast<int>((SaveLastLocation.y * (1.0f - speed)) + hHeight);
+		const auto bounds = MakeBounds(lastX, lastY, checkingRangeSingleTarget, checkingRangeSingleTarget, width, height);
+		CollectPurpleCandidates(data, rowPitch, hWidth, hHeight, bounds, vects);
+	}
+
+	Vector2 selected(0, 0);
+	if (!PickPriorityTarget(vects, selected)) {
 		return false;
 	}
 
-	if (vects.size() > 0) {
-		vects.sort([](const Vector2& lhs, const Vector2& rhs) // SORT BY BIGGEST Y
-			{
-				return  lhs.y < rhs.y;
-			});
-		list<Vector2> forbidden;
-		for (auto& current : vects) // access by reference to avoid copying
-		{
-			bool canUpdate = true;
-			if (abs(current.x) > trueX || abs(current.y) > trueY) {
-				continue;
-			}
-			for (auto& forb : forbidden) // access by reference to avoid copying
-			{
-				if ((current + forb).Len() < forSize) {
-					canUpdate = false;
-					break;
-				}
-				if (abs(current.x + forb.x) < forSize) {
-					canUpdate = false;
-					break;
-				}
-			}
-			if (canUpdate) {
-				forbidden.push_front(current);
-				if (forbidden.size() > maxCount) {
-					break;
-				}
-			}
-		}
-		if (forbidden.size() > 0) {
-			forbidden.sort([](const Vector2& lhs, const Vector2& rhs)
-				{
-					//return sqrt(pow(lhs.x, 2) + pow(lhs.y * 10, 2)) < sqrt(pow(rhs.x, 2) + pow(rhs.y * 10, 2));
-					return (pow(lhs.x, 2) + pow(lhs.y, 2)) < (pow(rhs.x, 2) + pow(rhs.y, 2));
-				});
-			SaveLastLocation = forbidden.front();
-			MoveMouseFromScreenPosition(SaveLastLocation, height, width);
-			NotfirstRunSingleTarget = true;
-			return true;
-		}
+	SaveLastLocation = selected;
+	MoveMouseFromScreenPosition(SaveLastLocation, height, width);
+	NotfirstRunSingleTarget = true;
+	return true;
+}
+
+static bool CustomPrioritySorting(PixelBuffer data, int height, int width, int rowPitch) {
+	thread_local std::vector<Vector2> vects;
+	if (vects.capacity() < 4096) {
+		vects.reserve(4096);
+	}
+	vects.clear();
+
+	const int hWidth = width / 2;
+	const int hHeight = height / 2;
+	const auto bounds = MakeBounds(hWidth, hHeight, trueX, trueY, width, height);
+	CollectPurpleCandidates(data, rowPitch, hWidth, hHeight, bounds, vects);
+
+	Vector2 selected(0, 0);
+	if (!PickPriorityTarget(vects, selected)) {
+		return false;
 	}
 
-	return false;
+	MoveMouseFromScreenPosition(selected, height, width);
+	return true;
 }
 
 
-bool CustomPrioritySorting(char* data, int height, int width) {
-	const int maxCount = 5;
-	const int forSize = 100;
-
-	list<Vector2> vects;
-	int hWidth = width / 2;
-	int hHeight = height / 2;
-	//Vector2 xhair = FindXhair(data, height, width);
-
-
-	for (int y = hHeight - trueY; y < hHeight + trueY; y++) {
-		for (int x = hWidth - trueX; x < hWidth + trueX; x++) {
-			int base = (x + y * desc.Width) * 4;
-			unsigned short red = data[base + 2] & 255;
-			unsigned short green = data[base + 1] & 255;
-			unsigned short blue = data[base] & 255;
-			if (IsPurpleColor(red, green, blue)) {
-				vects.push_back(Vector2(x - hWidth, y - hHeight));
-				/*if (recoil)
-				{
-					vects.push_back(Vector2(x - xhair.x, y - xhair.y));
-				}
-				else
-				{
-					vects.push_back(Vector2(x - hWidth, y - hHeight));
-				}*/
-			}
-		}
-	}
-
-	if (vects.size() > 0) {
-		vects.sort([](const Vector2& lhs, const Vector2& rhs) // SORT BY BIGGEST Y
-			{
-				return  lhs.y < rhs.y;
-			});
-		list<Vector2> forbidden;
-		for (auto& current : vects) // access by reference to avoid copying
-		{
-			bool canUpdate = true;
-			if (abs(current.x) > trueX || abs(current.y) > trueY) {
-				continue;
-			}
-			for (auto& forb : forbidden) // access by reference to avoid copying
-			{
-				if ((current + forb).Len() < forSize) {
-					canUpdate = false;
-					break;
-				}
-				if (abs(current.x + forb.x) < forSize) {
-					canUpdate = false;
-					break;
-				}
-			}
-			if (canUpdate) {
-				forbidden.push_front(current);
-				if (forbidden.size() > maxCount) {
-					break;
-				}
-			}
-		}
-		if (forbidden.size() > 0) {
-			forbidden.sort([](const Vector2& lhs, const Vector2& rhs)
-				{
-					//return sqrt(pow(lhs.x, 2) + pow(lhs.y * 10, 2)) < sqrt(pow(rhs.x, 2) + pow(rhs.y * 10, 2));
-					return (pow(lhs.x, 2) + pow(lhs.y, 2)) < (pow(rhs.x, 2) + pow(rhs.y, 2));
-				});
-			Vector2 front = forbidden.front();
-			MoveMouseFromScreenPosition(front, height, width);
-			return true;
-		}
-	}
-
-	return false;
-}
-
-
-bool InitColor() {
+static bool InitColor() {
 	// ==== FIND WINDOW ==== 
 	RECT rect;
 	game_window = FindWindowW(NULL, PROCESS_NAME);
@@ -677,9 +651,16 @@ bool InitColor() {
 
 	// REUSE desc FOR FRAMECOPY
 	desc.BindFlags = 0;
-	desc.MiscFlags &= D3D11_RESOURCE_MISC_TEXTURECUBE;
+	desc.MiscFlags = 0;
 	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 	desc.Usage = D3D11_USAGE_STAGING;
+
+	hr = lDevice->CreateTexture2D(&desc, nullptr, &frameCopyTexture);
+	if (FAILED(hr)) {
+		cout << "Failed to create frame copy texture" << endl;
+		return false;
+	}
+
 	InitMoveMouse();
 	cout << "Starting at " << width << "x" << height << endl;
 
@@ -687,12 +668,12 @@ bool InitColor() {
 }
 HDC hdc_target;
 
-bool ScreenGrab() {
+static bool ScreenGrab(bool runTargeting) {
 
 	//For debugging 
-	unsigned short last_r = 0;
-	unsigned short last_g = 0;
-	unsigned short last_b = 0;
+	static std::uint8_t last_r = 0;
+	static std::uint8_t last_g = 0;
+	static std::uint8_t last_b = 0;
 	std::chrono::high_resolution_clock::time_point start;
 	if (isDebugging)
 		start = std::chrono::high_resolution_clock::now();
@@ -701,8 +682,14 @@ bool ScreenGrab() {
 	// ==== SCEENGRAB ==== 
 
 	HDC hDC = nullptr;
-	gdiSurface->GetDC(true, &hDC);
+	if (FAILED(gdiSurface->GetDC(true, &hDC))) {
+		return false;
+	}
 	hdc_target = GetDC(game_window);
+	if (hdc_target == nullptr) {
+		gdiSurface->ReleaseDC(nullptr);
+		return false;
+	}
 
 	// === THE COPY TEXTURE ===
 	while (!BitBlt(hDC, 0, 0, width, height, hdc_target, 0, 0, SRCCOPY)) {
@@ -711,48 +698,34 @@ bool ScreenGrab() {
 	}
 
 	// VERY IMPORTANT TO RELEASE BEFORE COPY
-	ReleaseDC(NULL, hdc_target);
+	ReleaseDC(game_window, hdc_target);
 	gdiSurface->ReleaseDC(nullptr);
 
 	// === COPY TO CPU ===
-	D3D11_MAPPED_SUBRESOURCE tempsubsource;
-	ID3D11Texture2D* pFrameCopy = nullptr;
-	HRESULT hr = lDevice->CreateTexture2D(&desc, nullptr, &pFrameCopy);
+	D3D11_MAPPED_SUBRESOURCE tempsubsource{};
+	lImmediateContext->CopyResource(frameCopyTexture.Get(), texture.Get());
+	const HRESULT hr = lImmediateContext->Map(frameCopyTexture.Get(), 0, D3D11_MAP_READ, 0, &tempsubsource);
 	if (FAILED(hr)) {
 		return false;
 	}
+	const auto* data = static_cast<const std::uint8_t*>(tempsubsource.pData);
+	const int rowPitch = static_cast<int>(tempsubsource.RowPitch);
 
-	lImmediateContext->CopyResource(pFrameCopy, texture.Get());
-
-	hr = lImmediateContext->Map(pFrameCopy, 0, D3D11_MAP_READ, 0, &tempsubsource);
-	void* d = tempsubsource.pData;
-	char* data = reinterpret_cast<char*>(d);
-
-	if (FAILED(hr)) {
-		return false;
-	}
-
-	if (!currentSortingMethod(data, desc.Height, desc.Width) && flickAim)
+	if (runTargeting && !currentSortingMethod(data, static_cast<int>(desc.Height), static_cast<int>(desc.Width), rowPitch) && flickAim)
 	{
 		trueX = maxX;
 		trueY = maxY;
 	}
 
-
-	if (pFrameCopy != nullptr) {
-		lImmediateContext->Unmap(pFrameCopy, 0);
-
-		pFrameCopy->Release();
-		lImmediateContext->Flush();
-	}
-
 	// TESTING FRAME UPDATE, REMOVE THIS
 	if (isDebugging)
 	{
-		int base = (100 + 100 * desc.Width) * 4;
-		unsigned short red = data[base + 2];
-		unsigned short green = data[base + 1];
-		unsigned short blue = data[base];
+		const int debugX = 100;
+		const int debugY = 100;
+		const int base = debugY * rowPitch + debugX * kPixelStride;
+		const std::uint8_t red = data[base + 2];
+		const std::uint8_t green = data[base + 1];
+		const std::uint8_t blue = data[base];
 		if ((last_b != blue || last_g != green || last_r != red) && (red > 0 && blue > 0 && green > 0)) {
 			auto finish = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double> elapsed = finish - start;
@@ -763,15 +736,16 @@ bool ScreenGrab() {
 			last_g = green;
 			last_r = red;
 		}
-		GetImageForDebugging(data, desc.Height, desc.Width);
 	}
+	TrySaveCapture(data, static_cast<int>(desc.Height), static_cast<int>(desc.Width), rowPitch);
+	lImmediateContext->Unmap(frameCopyTexture.Get(), 0);
 	return true;
 }
 
 bool isRunning = false;
 bool isReallyRunning = false;
 
-void ScreenGrabMain() {
+static void ScreenGrabMain() {
 	while (true) {
 		bool shouldRun = false;
 		if (isRunning) {
@@ -789,7 +763,7 @@ void ScreenGrabMain() {
 					Sleep(1000);
 				}
 				else {
-					ScreenGrab();
+					ScreenGrab(true);
 				}
 			}
 			else {
@@ -837,76 +811,163 @@ void UpdateSortingMethod(int id) {
 	}
 }
 
-bool ReadConfig() {
-	ifstream cFile("config.txt");
+// Config parsing/writing uses typed conversions to avoid C-style atof behavior.
+static std::string RemoveWhitespace(std::string_view source) {
+	std::string result;
+	result.reserve(source.size());
+	for (const char ch : source) {
+		if (!std::isspace(static_cast<unsigned char>(ch))) {
+			result.push_back(ch);
+		}
+	}
+	return result;
+}
+
+template <typename TInt>
+static bool ParseInteger(std::string_view text, TInt& output) {
+	const auto begin = text.data();
+	const auto end = begin + text.size();
+	const auto [ptr, ec] = std::from_chars(begin, end, output);
+	return ec == std::errc{} && ptr == end;
+}
+
+static bool ParseFloat(std::string_view text, float& output) {
+	std::string temp(text);
+	char* parseEnd = nullptr;
+	const float value = std::strtof(temp.c_str(), &parseEnd);
+	if (parseEnd != (temp.c_str() + temp.size())) {
+		return false;
+	}
+	output = value;
+	return true;
+}
+
+static bool ParseBool(std::string_view text, bool& output) {
+	int numeric = 0;
+	if (ParseInteger(text, numeric)) {
+		output = numeric != 0;
+		return true;
+	}
+
+	if (text == "true" || text == "TRUE") {
+		output = true;
+		return true;
+	}
+	if (text == "false" || text == "FALSE") {
+		output = false;
+		return true;
+	}
+	return false;
+}
+
+static bool ReadConfig() {
+	std::ifstream configFile("config.txt");
+	if (!configFile.is_open()) {
+		return false;
+	}
+
 	std::string line;
 	int offsetX = offset[0];
 	int offsetY = offset[1];
-	if (cFile.is_open())
-	{
-		while (std::getline(cFile, line)) {
-			line.erase(std::remove_if(line.begin(), line.end(), isspace),
-				line.end());
-			if (line[0] == '#' || line.empty()) // COMMETS
-				continue;
-			auto delimiterPos = line.find("=");
-			auto name = line.substr(0, delimiterPos);
-			auto value = line.substr(delimiterPos + 1);
-#define READ(_name) if(name == NAMEOF(_name)) _name = atof(value.c_str());
 
-			READ(speed);
-			READ(maxX);
-			READ(maxY);
-			READ(offsetX);
-			READ(offsetY);
-			READ(flickAim);
-			READ(flickAimTime);
-			READ(full360);
-			READ(sortingCounter);
-			READ(holdKey);
-			READ(isHold);
-			READ(invertHold);
-			READ(recoilControl);
-			READ(overloadManualInputs);
+	while (std::getline(configFile, line)) {
+		const std::string cleaned = RemoveWhitespace(line);
+		if (cleaned.empty() || cleaned[0] == '#') {
+			continue;
 		}
 
-		offset[0] = offsetX;
-		offset[1] = offsetY;
-		return true;
+		const size_t delimiterPos = cleaned.find('=');
+		if (delimiterPos == std::string::npos || delimiterPos == 0 || delimiterPos + 1 >= cleaned.size()) {
+			continue;
+		}
+
+		const std::string_view name(cleaned.data(), delimiterPos);
+		const std::string_view value(cleaned.data() + delimiterPos + 1, cleaned.size() - delimiterPos - 1);
+
+		if (name == "speed") {
+			float parsed = speed;
+			if (ParseFloat(value, parsed)) speed = parsed;
+		}
+		else if (name == "maxX") {
+			ParseInteger(value, maxX);
+		}
+		else if (name == "maxY") {
+			ParseInteger(value, maxY);
+		}
+		else if (name == "offsetX") {
+			ParseInteger(value, offsetX);
+		}
+		else if (name == "offsetY") {
+			ParseInteger(value, offsetY);
+		}
+		else if (name == "flickAim") {
+			ParseBool(value, flickAim);
+		}
+		else if (name == "flickAimTime") {
+			ParseInteger(value, flickAimTime);
+		}
+		else if (name == "full360") {
+			ParseInteger(value, full360);
+		}
+		else if (name == "sortingCounter") {
+			ParseInteger(value, sortingCounter);
+		}
+		else if (name == "holdKey") {
+			ParseInteger(value, holdKey);
+		}
+		else if (name == "isHold") {
+			ParseBool(value, isHold);
+		}
+		else if (name == "invertHold") {
+			ParseBool(value, invertHold);
+		}
+		else if (name == "recoilControl") {
+			ParseBool(value, recoilControl);
+		}
+		else if (name == "overloadManualInputs") {
+			ParseBool(value, overloadManualInputs);
+		}
 	}
-	else {
-		return false;
-	}
+
+	offset[0] = offsetX;
+	offset[1] = offsetY;
+	return true;
 }
 
-void SaveConfig() {
-	ofstream cFile("config.txt");
-#define WRITE(_name) cFile << NAMEOF(_name) << "=" << _name << "\n";
+static void SaveConfig() {
+	std::ofstream configFile("config.txt", std::ios::trunc);
+	if (!configFile.is_open()) {
+		cout << "Failed to save config" << endl;
+		return;
+	}
 
-	int offsetX = offset[0];
-	int offsetY = offset[1];
+	const int offsetX = offset[0];
+	const int offsetY = offset[1];
+	const auto writeSetting = [&configFile](std::string_view name, const auto value) {
+		configFile << name << "=" << value << '\n';
+	};
 
-	WRITE(speed);
-	WRITE(maxX);
-	WRITE(maxY);
-	WRITE(offsetX);
-	WRITE(offsetY);
-	WRITE(flickAim);
-	WRITE(flickAimTime);
-	WRITE(full360);
-	WRITE(sortingCounter);
-	WRITE(recoilControl);
-	WRITE(overloadManualInputs);
+	writeSetting("speed", speed);
+	writeSetting("maxX", maxX);
+	writeSetting("maxY", maxY);
+	writeSetting("offsetX", offsetX);
+	writeSetting("offsetY", offsetY);
+	writeSetting("flickAim", static_cast<int>(flickAim));
+	writeSetting("flickAimTime", flickAimTime);
+	writeSetting("full360", full360);
+	writeSetting("sortingCounter", sortingCounter);
+	writeSetting("recoilControl", static_cast<int>(recoilControl));
+	writeSetting("overloadManualInputs", static_cast<int>(overloadManualInputs));
 
-	cFile << "#All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes\n";
-	if (holdKeyIndex > 0) {
-		cFile << NAMEOF(holdKey) << "=" << holdKeysCodes[holdKeyIndex] << "\n";
+	configFile << "#All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes\n";
+	if (holdKeyIndex > 0 && holdKeyIndex < kHoldKeyCount) {
+		writeSetting("holdKey", holdKeysCodes[holdKeyIndex]);
 	}
 	else {
-		WRITE(holdKey);
+		writeSetting("holdKey", holdKey);
 	}
-	WRITE(isHold);
-	WRITE(invertHold);
+	writeSetting("isHold", static_cast<int>(isHold));
+	writeSetting("invertHold", static_cast<int>(invertHold));
 	cout << "Saved config" << endl;
 }
 
@@ -973,7 +1034,7 @@ int main(int, char**)
 	ImVec4 clear_color = ImVec4(0.0f, 0.0f, 0.10f, 1.00f);
 
 	holdKeyIndex = -1;
-	for (size_t i = 0; i < hold_arry_size; i++)
+	for (int i = 0; i < kHoldKeyCount; ++i)
 	{
 		if (holdKeysCodes[i] == holdKey) {
 			holdKeyIndex = i;
@@ -1069,7 +1130,7 @@ int main(int, char**)
 			}*/
 
 			if (holdKeyIndex > 0) {
-				ImGui::Combo(isHold ? "Hold key" : "Toggle Key", &holdKeyIndex, holdKeys, hold_arry_size);
+				ImGui::Combo(isHold ? "Hold key" : "Toggle Key", &holdKeyIndex, holdKeys, kHoldKeyCount);
 				holdKey = holdKeysCodes[holdKeyIndex];
 			}
 			else {
@@ -1089,6 +1150,16 @@ int main(int, char**)
 
 			if (ImGui::Button("Save Config")) {
 				SaveConfig();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Capture ScreenGrab")) {
+				requestDebugCapture.store(true, std::memory_order_relaxed);
+				if (!isRunning) {
+					if (!ScreenGrab(false)) {
+						requestDebugCapture.store(false, std::memory_order_relaxed);
+						cout << "Failed to capture frame. Ensure the target window is available." << endl;
+					}
+				}
 			}
 			ImGui::SameLine();
 			if (ImGui::Button(isRunning ? "Stop colorbot" : "Start colorbot")) {
