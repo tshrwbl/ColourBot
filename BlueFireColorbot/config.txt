@@ -2,12 +2,12 @@ speed=0.2
 maxX=586
 maxY=261
 offsetX=0
-offsetY=1
-flickAim=1
+offsetY=0
+flickAim=0
 flickAimTime=30
 full360=3960
 sortingCounter=3
-recoilControl=1
+recoilControl=0
 overloadManualInputs=0
 #All keycodes can be found at https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 holdKey=4

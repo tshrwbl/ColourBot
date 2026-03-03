@@ -212,9 +212,9 @@ static void MoveMouse(int dx, int dy) {
 	mstroke.information = 0;
 	mstroke.x = dx + offset[0];
 	mstroke.y = dy + offset[1] + recoilOffset;
-	if (isDebugging)
-		//logging::INFO("Cords: " + dx + ',' + dy);
-		cout << "Cords: x-" << dx << "y-" << dy << endl;
+	//if (isDebugging)
+	//	//logging::INFO("Cords: " + dx + ',' + dy);
+	//	cout << "Cords: x-" << dx << "y-" << dy << endl;
 	interception_send(context, device, &stroke, 1);
 }
 
@@ -232,7 +232,7 @@ static void SetIsZoomed() { // CALL THIS EVERY FRAME
 }
 
 static int Full360() {
-	return isZoomed ? full360 : (full360 * 8 / 10);
+	return full360;
 }
 
 static int GetCoordsX(int delta, int total) {
@@ -291,9 +291,9 @@ static void MoveMouseFromScreenPosition(Vector2 front, int height, int width) {
 				if (abs(moveY) < 2)
 					moveY = 0;
 			}
-			if (isDebugging)
+			//if (isDebugging)
 				//logging::INFO( "timeDiff: " + timeDiff + ' ' + recoilOffset);
-				cout << "Time: " << timeDiff << "ms " << recoilOffset << endl;
+				//cout << "Time: " << timeDiff << "ms " << recoilOffset << endl;
 			//timerStart = std::chrono::high_resolution_clock::now();
 		}
 		else
