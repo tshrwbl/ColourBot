@@ -33,7 +33,7 @@
 #include <string>
 #include "DetectionCommon.h"
 #include "CpuDetector.h"
-#include "GpuColorDetector.h"
+#include "GpuColorDetectorDx12.h"
 #include "ConfigIO.h"
 
 #pragma comment(lib,"d3d11.lib")
@@ -167,8 +167,8 @@ std::atomic<unsigned long long> captureCounter{ 0ULL };
 RECT duplicationDesktopRect{ 0, 0, 0, 0 };
 
 colourbot::CpuDetector cpuDetector;
-colourbot::GpuColorDetector gpuDetector;
-bool gpuDetectorAvailable = false;
+colourbot::GpuColorDetectorDx12 gpuDetectorDx12;
+bool gpuDetectorDx12Available = false;
 bool desktopDuplicationAvailable = false;
 
 InterceptionContext context;
@@ -585,9 +585,9 @@ static bool InitColor() {
 		return false;
 	}
 
-	gpuDetectorAvailable = gpuDetector.Initialize(lDevice.Get(), texture.Get(), static_cast<int>(width), static_cast<int>(height));
-	if (!gpuDetectorAvailable) {
-		cout << "GPU detector unavailable, using CPU modes only" << endl;
+	gpuDetectorDx12Available = gpuDetectorDx12.Initialize(static_cast<int>(width), static_cast<int>(height), game_window);
+	if (!gpuDetectorDx12Available) {
+		cout << "GPU DX12 detector unavailable, using CPU modes only" << endl;
 	}
 	if (!InitDesktopDuplication()) {
 		cout << "Desktop Duplication unavailable, using GDI capture fallback" << endl;
@@ -622,41 +622,52 @@ static bool ScreenGrab(bool runTargeting) {
 		double maxMs = 0.0;
 	};
 	static DetectionTimingState timing{};
-
-
-	// ==== SCEENGRAB ==== 
-
-	if (!CaptureFrameWithDesktopDuplication()) {
-		HDC hDC = nullptr;
-		if (FAILED(gdiSurface->GetDC(true, &hDC))) {
-			return false;
-		}
-		hdc_target = GetDC(game_window);
-		if (hdc_target == nullptr) {
-			gdiSurface->ReleaseDC(nullptr);
-			return false;
-		}
-
-		// === FALLBACK COPY VIA GDI ===
-		while (!BitBlt(hDC, 0, 0, width, height, hdc_target, 0, 0, SRCCOPY)) {
-			cout << "FAILED" << endl;
-			Sleep(1000);
-		}
-
-		// VERY IMPORTANT TO RELEASE BEFORE COPY
-		ReleaseDC(game_window, hdc_target);
-		gdiSurface->ReleaseDC(nullptr);
-	}
-
 	const int frameWidth = static_cast<int>(desc.Width);
 	const int frameHeight = static_cast<int>(desc.Height);
 	const int halfWidth = frameWidth / 2;
 	const int halfHeight = frameHeight / 2;
+	const bool wantsGpuDetection =
+		runTargeting &&
+		currentSortingMethod == SortingMethod::GpuFast &&
+		gpuDetectorDx12Available;
+	const bool debugCaptureRequested = requestDebugCapture.load(std::memory_order_relaxed);
+	const bool needsDx11FrameCapture =
+		(!wantsGpuDetection) ||
+		(!runTargeting) ||
+		isDebugging ||
+		debugCaptureRequested;
+
+	// ==== SCEENGRAB ==== 
+
+	if (needsDx11FrameCapture) {
+		if (!CaptureFrameWithDesktopDuplication()) {
+			HDC hDC = nullptr;
+			if (FAILED(gdiSurface->GetDC(true, &hDC))) {
+				return false;
+			}
+			hdc_target = GetDC(game_window);
+			if (hdc_target == nullptr) {
+				gdiSurface->ReleaseDC(nullptr);
+				return false;
+			}
+
+			// === FALLBACK COPY VIA GDI ===
+			while (!BitBlt(hDC, 0, 0, width, height, hdc_target, 0, 0, SRCCOPY)) {
+				cout << "FAILED" << endl;
+				Sleep(1000);
+			}
+
+			// VERY IMPORTANT TO RELEASE BEFORE COPY
+			ReleaseDC(game_window, hdc_target);
+			gdiSurface->ReleaseDC(nullptr);
+		}
+	}
 
 	bool usedGpuDetection = false;
 	bool targetFound = false;
 	auto detectionStart = std::chrono::high_resolution_clock::now();
-	if (runTargeting && currentSortingMethod == SortingMethod::GpuFast && gpuDetectorAvailable) {
+
+	if (wantsGpuDetection) {
 		const auto bounds = MakeBounds(halfWidth, halfHeight, trueX, trueY, frameWidth, frameHeight);
 		colourbot::GpuDetectionParams params{};
 		params.bounds = bounds;
@@ -664,7 +675,7 @@ static bool ScreenGrab(bool runTargeting) {
 		params.centerY = halfHeight;
 
 		Vector2 target{};
-		if (gpuDetector.Detect(lImmediateContext.Get(), params, target)) {
+		if (gpuDetectorDx12.Detect(params, target)) {
 			MoveMouseFromScreenPosition(target, frameHeight, frameWidth);
 			targetFound = true;
 		}
@@ -673,7 +684,7 @@ static bool ScreenGrab(bool runTargeting) {
 
 	const bool needsCpuMap = (runTargeting && !usedGpuDetection) ||
 		isDebugging ||
-		requestDebugCapture.load(std::memory_order_relaxed);
+		debugCaptureRequested;
 
 	if (needsCpuMap) {
 		D3D11_MAPPED_SUBRESOURCE mapped{};
@@ -813,8 +824,8 @@ void UpdateSortingMethod(int id) {
 		break;
 	case 3:
 		currentSortingMethod = SortingMethod::GpuFast;
-		currentSortingMethodName = "GPU Fast Detector";
-		currentSortingMethodDescript = gpuDetectorAvailable ? "Fastest path using compute shader" : "GPU unavailable, falls back to CPU";
+		currentSortingMethodName = "GPU DX12 Wave";
+		currentSortingMethodDescript = gpuDetectorDx12Available ? "SM6 wave-intrinsic compute path" : "DX12/SM6 unavailable, falls back to CPU";
 		break;
 	default:
 		break;

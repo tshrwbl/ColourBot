@@ -27,6 +27,12 @@ struct ScanBounds {
 	int maxY;
 };
 
+struct GpuDetectionParams {
+	ScanBounds bounds{};
+	int centerX{};
+	int centerY{};
+};
+
 [[nodiscard]] inline ScanBounds MakeBounds(int centerX, int centerY, int rangeX, int rangeY, int width, int height) {
 	const int boundedRangeX = (std::max)(0, rangeX);
 	const int boundedRangeY = (std::max)(0, rangeY);

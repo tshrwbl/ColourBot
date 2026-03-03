@@ -48,7 +48,7 @@
     <ClCompile Include="CpuDetector.cpp">
       <Filter>sources</Filter>
     </ClCompile>
-    <ClCompile Include="GpuColorDetector.cpp">
+    <ClCompile Include="GpuColorDetectorDx12.cpp">
       <Filter>sources</Filter>
     </ClCompile>
   </ItemGroup>
@@ -108,7 +108,7 @@
     <ClInclude Include="DetectionCommon.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="GpuColorDetector.h">
+    <ClInclude Include="GpuColorDetectorDx12.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
