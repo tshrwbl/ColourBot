@@ -40,7 +40,8 @@
 using namespace std;
 
 //#define PROCESS_NAME L"VALORANT  " 
-#define PROCESS_NAME L"Untitled - Paint" 
+//#define PROCESS_NAME L"Untitled - Paint" 
+#define PROCESS_NAME L"AssaultCube" 
 
 #define DEBUGDIR L"Test"
 

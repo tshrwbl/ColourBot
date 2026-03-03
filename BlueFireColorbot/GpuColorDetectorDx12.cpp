@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <string>
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "d3d12.lib")
@@ -222,6 +223,68 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
 using DxcCreateInstanceProc = HRESULT(WINAPI*)(REFCLSID, REFIID, LPVOID*);
 
+std::wstring DirectoryOfModule(HMODULE module) {
+	wchar_t path[MAX_PATH]{};
+	const DWORD pathLength = GetModuleFileNameW(module, path, static_cast<DWORD>(_countof(path)));
+	if (pathLength == 0 || pathLength >= _countof(path)) {
+		return {};
+	}
+
+	for (DWORD i = pathLength; i > 0; --i) {
+		if (path[i - 1] == L'\\' || path[i - 1] == L'/') {
+			path[i - 1] = L'\0';
+			return std::wstring(path);
+		}
+	}
+
+	return {};
+}
+
+HMODULE LoadDxcCompilerModule() {
+	HMODULE module = LoadLibraryW(L"dxcompiler.dll");
+	if (module != nullptr) {
+		return module;
+	}
+
+	const std::wstring exeDir = DirectoryOfModule(nullptr);
+	if (exeDir.empty()) {
+		return nullptr;
+	}
+
+	const std::wstring candidates[] = {
+		exeDir + L"\\dxcompiler.dll",
+		exeDir + L"\\dxc\\dxcompiler.dll",
+		exeDir + L"\\bin\\dxcompiler.dll"
+	};
+
+	for (const std::wstring& candidate : candidates) {
+		module = LoadLibraryW(candidate.c_str());
+		if (module != nullptr) {
+			return module;
+		}
+	}
+
+	return nullptr;
+}
+
+void EnsureDxilAvailable(HMODULE dxcModule) {
+	if (dxcModule == nullptr) {
+		return;
+	}
+
+	if (GetModuleHandleW(L"dxil.dll") != nullptr) {
+		return;
+	}
+
+	const std::wstring dxcDir = DirectoryOfModule(dxcModule);
+	if (dxcDir.empty()) {
+		return;
+	}
+
+	const std::wstring dxilPath = dxcDir + L"\\dxil.dll";
+	LoadLibraryW(dxilPath.c_str());
+}
+
 } // namespace
 
 struct GpuColorDetectorDx12::CaptureContext {
@@ -379,13 +442,14 @@ bool GpuColorDetectorDx12::CreateCaptureInfrastructure() {
 	capture_ = new CaptureContext();
 	capture_->shouldRoUninitialize = (roInitResult == S_OK || roInitResult == S_FALSE);
 
-	Microsoft::WRL::ComPtr<IDXGIDevice> d3d12DxgiDevice;
-	if (FAILED(device_.As(&d3d12DxgiDevice))) {
+	Microsoft::WRL::ComPtr<IDXGIFactory6> factory;
+	if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
 		return false;
 	}
 
-	Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
-	if (FAILED(d3d12DxgiDevice->GetAdapter(&adapter))) {
+	Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+	const LUID adapterLuid = device_->GetAdapterLuid();
+	if (FAILED(factory->EnumAdapterByLuid(adapterLuid, IID_PPV_ARGS(&adapter)))) {
 		return false;
 	}
 
@@ -409,6 +473,12 @@ bool GpuColorDetectorDx12::CreateCaptureInfrastructure() {
 	}
 	if (FAILED(capture_->context11.As(&capture_->context11_4))) {
 		return false;
+	}
+
+	// WGC frame production can involve background threads; enforce D3D11 context thread safety.
+	Microsoft::WRL::ComPtr<ID3D11Multithread> multithread;
+	if (SUCCEEDED(capture_->context11.As(&multithread)) && multithread != nullptr) {
+		multithread->SetMultithreadProtected(TRUE);
 	}
 
 	Microsoft::WRL::ComPtr<IDXGIDevice> captureDxgiDevice;
@@ -582,6 +652,7 @@ bool GpuColorDetectorDx12::CreateResources() {
 	if (FAILED(device_->OpenSharedHandle(capture_->sharedTextureHandle, IID_PPV_ARGS(&captureTexture_)))) {
 		return false;
 	}
+	captureTextureState_ = D3D12_RESOURCE_STATE_COMMON;
 
 	if (FAILED(device_->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(&capture_->sharedFence12)))) {
 		return false;
@@ -644,15 +715,18 @@ bool GpuColorDetectorDx12::CreateResources() {
 		&finalDesc,
 		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 		nullptr,
-		IID_PPV_ARGS(&finalResultBuffer_)))) {
+			IID_PPV_ARGS(&finalResultBuffer_)))) {
 		return false;
 	}
+
+	D3D12_RESOURCE_DESC readbackDesc = finalDesc;
+	readbackDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
 	for (auto& frame : frames_) {
 		if (FAILED(device_->CreateCommittedResource(
 			&readbackHeap,
 			D3D12_HEAP_FLAG_NONE,
-			&finalDesc,
+			&readbackDesc,
 			D3D12_RESOURCE_STATE_COPY_DEST,
 			nullptr,
 			IID_PPV_ARGS(&frame.readbackBuffer)))) {
@@ -718,8 +792,13 @@ bool GpuColorDetectorDx12::CompileComputeShader(
 		return false;
 	}
 
-	static HMODULE dxcModule = LoadLibraryW(L"dxcompiler.dll");
+	static HMODULE dxcModule = nullptr;
 	if (dxcModule == nullptr) {
+		dxcModule = LoadDxcCompilerModule();
+		EnsureDxilAvailable(dxcModule);
+	}
+	if (dxcModule == nullptr) {
+		OutputDebugStringW(L"[GpuColorDetectorDx12] Failed to load dxcompiler.dll. Place dxcompiler.dll and dxil.dll next to the executable.\n");
 		return false;
 	}
 
@@ -1015,6 +1094,7 @@ bool GpuColorDetectorDx12::CaptureFrameToTexture() {
 		if (FAILED(capture_->context11_4->Signal(capture_->sharedFence11.Get(), capture_->latestFenceValue))) {
 			return false;
 		}
+		capture_->context11->Flush();
 		return true;
 	} catch (const winrt::hresult_error&) {
 		return false;
@@ -1061,21 +1141,8 @@ bool GpuColorDetectorDx12::Detect(const GpuDetectionParams& params, Vector2& tar
 	commandList_->SetDescriptorHeaps(1, heaps);
 	commandList_->SetComputeRootSignature(rootSignature_.Get());
 
-	const UINT clearValues[4] = { 0u, 0u, 0u, 0u };
-	commandList_->ClearUnorderedAccessViewUint(
-		GpuHandle(kUavWaveResults),
-		CpuHandle(kUavWaveResults),
-		waveResultsBuffer_.Get(),
-		clearValues,
-		0,
-		nullptr);
-	commandList_->ClearUnorderedAccessViewUint(
-		GpuHandle(kUavStage2),
-		CpuHandle(kUavStage2),
-		stage2Buffer_.Get(),
-		clearValues,
-		0,
-		nullptr);
+	Transition(commandList_.Get(), captureTexture_.Get(), captureTextureState_, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	captureTextureState_ = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
 	ScanConstants scan{};
 	scan.width = static_cast<std::uint32_t>(width_);
@@ -1132,6 +1199,8 @@ bool GpuColorDetectorDx12::Detect(const GpuDetectionParams& params, Vector2& tar
 
 	Transition(commandList_.Get(), waveResultsBuffer_.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	Transition(commandList_.Get(), stage2Buffer_.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	Transition(commandList_.Get(), captureTexture_.Get(), captureTextureState_, D3D12_RESOURCE_STATE_COMMON);
+	captureTextureState_ = D3D12_RESOURCE_STATE_COMMON;
 
 	if (!SubmitAndSignal(writeFrame)) {
 		return false;

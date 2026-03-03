@@ -70,7 +70,9 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Label="UserMacros">
+    <DxcBinDir Condition="'$(DxcBinDir)'==''">C:\Program Files\dxc_2026_02_20\bin\x64</DxcBinDir>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
@@ -129,6 +131,19 @@
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <AdditionalDependencies>d3d9.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>if exist "$(ProjectDir)interception.dll" copy /Y "$(ProjectDir)interception.dll" "$(OutDir)interception.dll"
+if exist "$(ProjectDir)dxcompiler.dll" (
+  copy /Y "$(ProjectDir)dxcompiler.dll" "$(OutDir)dxcompiler.dll"
+) else if exist "$(DxcBinDir)\dxcompiler.dll" (
+  copy /Y "$(DxcBinDir)\dxcompiler.dll" "$(OutDir)dxcompiler.dll"
+)
+if exist "$(ProjectDir)dxil.dll" (
+  copy /Y "$(ProjectDir)dxil.dll" "$(OutDir)dxil.dll"
+) else if exist "$(DxcBinDir)\dxil.dll" (
+  copy /Y "$(DxcBinDir)\dxil.dll" "$(OutDir)dxil.dll"
+)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -149,6 +164,19 @@
       <AdditionalDependencies>d3d9.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
+    <PostBuildEvent>
+      <Command>if exist "$(ProjectDir)interception.dll" copy /Y "$(ProjectDir)interception.dll" "$(OutDir)interception.dll"
+if exist "$(ProjectDir)dxcompiler.dll" (
+  copy /Y "$(ProjectDir)dxcompiler.dll" "$(OutDir)dxcompiler.dll"
+) else if exist "$(DxcBinDir)\dxcompiler.dll" (
+  copy /Y "$(DxcBinDir)\dxcompiler.dll" "$(OutDir)dxcompiler.dll"
+)
+if exist "$(ProjectDir)dxil.dll" (
+  copy /Y "$(ProjectDir)dxil.dll" "$(OutDir)dxil.dll"
+) else if exist "$(DxcBinDir)\dxil.dll" (
+  copy /Y "$(DxcBinDir)\dxil.dll" "$(OutDir)dxil.dll"
+)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ConfigIO.cpp" />
