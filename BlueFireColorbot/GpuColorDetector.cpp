@@ -4,7 +4,7 @@
 
 #include <algorithm>
 #include <array>
-#include <limits>
+#include <cstddef>
 
 #pragma comment(lib, "d3dcompiler.lib")
 
@@ -121,6 +121,108 @@ void main(
 }
 )";
 
+constexpr char kReduceShaderSource[] = R"(
+StructuredBuffer<uint4> GroupResults : register(t0);
+RWStructuredBuffer<uint4> FinalResult : register(u0);
+
+groupshared uint SharedScore[256];
+groupshared uint SharedX[256];
+groupshared uint SharedY[256];
+groupshared uint SharedFound[256];
+
+[numthreads(256, 1, 1)]
+void main(uint groupIndex : SV_GroupIndex)
+{
+    uint groupCount = 0u;
+    uint stride = 0u;
+    GroupResults.GetDimensions(groupCount, stride);
+
+    uint score = 0xffffffffu;
+    uint outX = 0u;
+    uint outY = 0u;
+    uint found = 0u;
+
+    for (uint i = groupIndex; i < groupCount; i += 256u) {
+        uint4 item = GroupResults[i];
+        const bool takeItem =
+            (item.w != 0u) &&
+            ((found == 0u) || (item.x < score));
+
+        if (takeItem) {
+            score = item.x;
+            outX = item.y;
+            outY = item.z;
+            found = item.w;
+        }
+    }
+
+    SharedScore[groupIndex] = score;
+    SharedX[groupIndex] = outX;
+    SharedY[groupIndex] = outY;
+    SharedFound[groupIndex] = found;
+
+    GroupMemoryBarrierWithGroupSync();
+
+    [unroll]
+    for (uint reduceStride = 128u; reduceStride > 0u; reduceStride >>= 1u) {
+        if (groupIndex < reduceStride) {
+            const uint other = groupIndex + reduceStride;
+            const bool takeOther =
+                (SharedFound[other] != 0u) &&
+                ((SharedFound[groupIndex] == 0u) || (SharedScore[other] < SharedScore[groupIndex]));
+
+            if (takeOther) {
+                SharedScore[groupIndex] = SharedScore[other];
+                SharedX[groupIndex] = SharedX[other];
+                SharedY[groupIndex] = SharedY[other];
+                SharedFound[groupIndex] = SharedFound[other];
+            }
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    if (groupIndex == 0u) {
+        FinalResult[0] = uint4(SharedScore[0], SharedX[0], SharedY[0], SharedFound[0]);
+    }
+}
+)";
+
+bool CompileComputeShader(
+	ID3D11Device* device,
+	const char* source,
+	std::size_t sourceLength,
+	ID3D11ComputeShader** shaderOut) {
+	if (device == nullptr || source == nullptr || sourceLength == 0 || shaderOut == nullptr) {
+		return false;
+	}
+
+	Microsoft::WRL::ComPtr<ID3DBlob> shaderBlob;
+	Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
+
+	const HRESULT compileResult = D3DCompile(
+		source,
+		sourceLength,
+		nullptr,
+		nullptr,
+		nullptr,
+		"main",
+		"cs_5_0",
+		0,
+		0,
+		&shaderBlob,
+		&errorBlob);
+	if (FAILED(compileResult) || shaderBlob == nullptr) {
+		return false;
+	}
+
+	const HRESULT createResult = device->CreateComputeShader(
+		shaderBlob->GetBufferPointer(),
+		shaderBlob->GetBufferSize(),
+		nullptr,
+		shaderOut);
+	return SUCCEEDED(createResult);
+}
+
 } // namespace
 
 bool GpuColorDetector::Initialize(ID3D11Device* device, ID3D11Texture2D* sourceTexture, int width, int height) {
@@ -132,8 +234,10 @@ bool GpuColorDetector::Initialize(ID3D11Device* device, ID3D11Texture2D* sourceT
 	height_ = height;
 	groupsX_ = (width_ + 15) / 16;
 	groupsY_ = (height_ + 15) / 16;
+	readbackWriteIndex_ = 0;
+	readbackReady_.fill(false);
 
-	if (!CreateShader(device)) {
+	if (!CreateShaders(device)) {
 		return false;
 	}
 	if (!CreateSourceView(device, sourceTexture)) {
@@ -146,12 +250,21 @@ bool GpuColorDetector::Initialize(ID3D11Device* device, ID3D11Texture2D* sourceT
 }
 
 bool GpuColorDetector::IsReady() const noexcept {
-	return computeShader_ != nullptr &&
+	for (const auto& readbackBuffer : finalReadbackBuffers_) {
+		if (readbackBuffer == nullptr) {
+			return false;
+		}
+	}
+
+	return scanComputeShader_ != nullptr &&
+		reduceComputeShader_ != nullptr &&
 		constantsBuffer_ != nullptr &&
 		groupResultBuffer_ != nullptr &&
-		groupReadbackBuffer_ != nullptr &&
+		finalResultBuffer_ != nullptr &&
 		sourceTextureSrv_ != nullptr &&
-		groupResultUav_ != nullptr;
+		groupResultSrv_ != nullptr &&
+		groupResultUav_ != nullptr &&
+		finalResultUav_ != nullptr;
 }
 
 bool GpuColorDetector::Detect(ID3D11DeviceContext* context, const GpuDetectionParams& params, Vector2& targetOut) {
@@ -179,14 +292,14 @@ bool GpuColorDetector::Detect(ID3D11DeviceContext* context, const GpuDetectionPa
 
 	context->UpdateSubresource(constantsBuffer_.Get(), 0, nullptr, &constants, 0, 0);
 
-	ID3D11ShaderResourceView* srvs[] = { sourceTextureSrv_.Get() };
-	ID3D11UnorderedAccessView* uavs[] = { groupResultUav_.Get() };
-	ID3D11Buffer* cbs[] = { constantsBuffer_.Get() };
+	ID3D11ShaderResourceView* scanSrvs[] = { sourceTextureSrv_.Get() };
+	ID3D11UnorderedAccessView* scanUavs[] = { groupResultUav_.Get() };
+	ID3D11Buffer* scanCbs[] = { constantsBuffer_.Get() };
 
-	context->CSSetShader(computeShader_.Get(), nullptr, 0);
-	context->CSSetConstantBuffers(0, 1, cbs);
-	context->CSSetShaderResources(0, 1, srvs);
-	context->CSSetUnorderedAccessViews(0, 1, uavs, nullptr);
+	context->CSSetShader(scanComputeShader_.Get(), nullptr, 0);
+	context->CSSetConstantBuffers(0, 1, scanCbs);
+	context->CSSetShaderResources(0, 1, scanSrvs);
+	context->CSSetUnorderedAccessViews(0, 1, scanUavs, nullptr);
 	context->Dispatch(static_cast<UINT>(groupsX_), static_cast<UINT>(groupsY_), 1);
 
 	ID3D11ShaderResourceView* nullSrv[] = { nullptr };
@@ -194,34 +307,48 @@ bool GpuColorDetector::Detect(ID3D11DeviceContext* context, const GpuDetectionPa
 	context->CSSetShaderResources(0, 1, nullSrv);
 	context->CSSetUnorderedAccessViews(0, 1, nullUav, nullptr);
 
-	context->CopyResource(groupReadbackBuffer_.Get(), groupResultBuffer_.Get());
+	ID3D11ShaderResourceView* reduceSrvs[] = { groupResultSrv_.Get() };
+	ID3D11UnorderedAccessView* reduceUavs[] = { finalResultUav_.Get() };
+	context->CSSetShader(reduceComputeShader_.Get(), nullptr, 0);
+	context->CSSetShaderResources(0, 1, reduceSrvs);
+	context->CSSetUnorderedAccessViews(0, 1, reduceUavs, nullptr);
+	context->Dispatch(1, 1, 1);
+
+	context->CSSetShaderResources(0, 1, nullSrv);
+	context->CSSetUnorderedAccessViews(0, 1, nullUav, nullptr);
+
+	const int writeIndex = readbackWriteIndex_;
+	D3D11_BOX copyBox{};
+	copyBox.left = 0;
+	copyBox.right = static_cast<UINT>(sizeof(GroupResult));
+	copyBox.top = 0;
+	copyBox.bottom = 1;
+	copyBox.front = 0;
+	copyBox.back = 1;
+	context->CopySubresourceRegion(finalReadbackBuffers_[writeIndex].Get(), 0, 0, 0, 0, finalResultBuffer_.Get(), 0, &copyBox);
+	readbackReady_[writeIndex] = true;
+	readbackWriteIndex_ = (readbackWriteIndex_ + 1) % kReadbackBufferCount;
+
+	const int mapIndex = readbackWriteIndex_;
+	if (!readbackReady_[mapIndex]) {
+		return false;
+	}
 
 	D3D11_MAPPED_SUBRESOURCE mapped{};
-	const HRESULT mapResult = context->Map(groupReadbackBuffer_.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+	const HRESULT mapResult = context->Map(finalReadbackBuffers_[mapIndex].Get(), 0, D3D11_MAP_READ, D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
+	if (mapResult == DXGI_ERROR_WAS_STILL_DRAWING) {
+		return false;
+	}
 	if (FAILED(mapResult)) {
 		return false;
 	}
 
-	const auto* results = static_cast<const GroupResult*>(mapped.pData);
-	const int groupCount = groupsX_ * groupsY_;
-	bool foundAny = false;
-	std::uint32_t bestScore = (std::numeric_limits<std::uint32_t>::max)();
-	int bestX = 0;
-	int bestY = 0;
-	for (int i = 0; i < groupCount; ++i) {
-		const auto& item = results[i];
-		if (item.found == 0) {
-			continue;
-		}
-		if (!foundAny || item.score < bestScore) {
-			foundAny = true;
-			bestScore = item.score;
-			bestX = static_cast<int>(item.x);
-			bestY = static_cast<int>(item.y);
-		}
-	}
+	const auto* result = static_cast<const GroupResult*>(mapped.pData);
+	const bool foundAny = (result->found != 0u);
+	const int bestX = static_cast<int>(result->x);
+	const int bestY = static_cast<int>(result->y);
 
-	context->Unmap(groupReadbackBuffer_.Get(), 0);
+	context->Unmap(finalReadbackBuffers_[mapIndex].Get(), 0);
 
 	if (!foundAny) {
 		return false;
@@ -231,32 +358,17 @@ bool GpuColorDetector::Detect(ID3D11DeviceContext* context, const GpuDetectionPa
 	return true;
 }
 
-bool GpuColorDetector::CreateShader(ID3D11Device* device) {
-	Microsoft::WRL::ComPtr<ID3DBlob> shaderBlob;
-	Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
-
-	const HRESULT compileResult = D3DCompile(
+bool GpuColorDetector::CreateShaders(ID3D11Device* device) {
+	return CompileComputeShader(
+		device,
 		kComputeShaderSource,
 		sizeof(kComputeShaderSource) - 1,
-		nullptr,
-		nullptr,
-		nullptr,
-		"main",
-		"cs_5_0",
-		0,
-		0,
-		&shaderBlob,
-		&errorBlob);
-	if (FAILED(compileResult) || shaderBlob == nullptr) {
-		return false;
-	}
-
-	const HRESULT createResult = device->CreateComputeShader(
-		shaderBlob->GetBufferPointer(),
-		shaderBlob->GetBufferSize(),
-		nullptr,
-		&computeShader_);
-	return SUCCEEDED(createResult);
+		scanComputeShader_.GetAddressOf()) &&
+		CompileComputeShader(
+			device,
+			kReduceShaderSource,
+			sizeof(kReduceShaderSource) - 1,
+			reduceComputeShader_.GetAddressOf());
 }
 
 bool GpuColorDetector::CreateSourceView(ID3D11Device* device, ID3D11Texture2D* sourceTexture) {
@@ -282,29 +394,59 @@ bool GpuColorDetector::CreateBuffers(ID3D11Device* device) {
 	D3D11_BUFFER_DESC groupResultDesc{};
 	groupResultDesc.ByteWidth = static_cast<UINT>(groupCount * sizeof(GroupResult));
 	groupResultDesc.Usage = D3D11_USAGE_DEFAULT;
-	groupResultDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+	groupResultDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_SHADER_RESOURCE;
 	groupResultDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
 	groupResultDesc.StructureByteStride = sizeof(GroupResult);
 	if (FAILED(device->CreateBuffer(&groupResultDesc, nullptr, &groupResultBuffer_))) {
 		return false;
 	}
 
-	D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
-	uavDesc.Format = DXGI_FORMAT_UNKNOWN;
-	uavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
-	uavDesc.Buffer.FirstElement = 0;
-	uavDesc.Buffer.NumElements = static_cast<UINT>(groupCount);
-	if (FAILED(device->CreateUnorderedAccessView(groupResultBuffer_.Get(), &uavDesc, &groupResultUav_))) {
+	D3D11_SHADER_RESOURCE_VIEW_DESC groupSrvDesc{};
+	groupSrvDesc.Format = DXGI_FORMAT_UNKNOWN;
+	groupSrvDesc.ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
+	groupSrvDesc.Buffer.FirstElement = 0;
+	groupSrvDesc.Buffer.NumElements = static_cast<UINT>(groupCount);
+	if (FAILED(device->CreateShaderResourceView(groupResultBuffer_.Get(), &groupSrvDesc, &groupResultSrv_))) {
 		return false;
 	}
 
-	D3D11_BUFFER_DESC readbackDesc = groupResultDesc;
+	D3D11_UNORDERED_ACCESS_VIEW_DESC groupUavDesc{};
+	groupUavDesc.Format = DXGI_FORMAT_UNKNOWN;
+	groupUavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+	groupUavDesc.Buffer.FirstElement = 0;
+	groupUavDesc.Buffer.NumElements = static_cast<UINT>(groupCount);
+	if (FAILED(device->CreateUnorderedAccessView(groupResultBuffer_.Get(), &groupUavDesc, &groupResultUav_))) {
+		return false;
+	}
+
+	D3D11_BUFFER_DESC finalResultDesc{};
+	finalResultDesc.ByteWidth = sizeof(GroupResult);
+	finalResultDesc.Usage = D3D11_USAGE_DEFAULT;
+	finalResultDesc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;
+	finalResultDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+	finalResultDesc.StructureByteStride = sizeof(GroupResult);
+	if (FAILED(device->CreateBuffer(&finalResultDesc, nullptr, &finalResultBuffer_))) {
+		return false;
+	}
+
+	D3D11_UNORDERED_ACCESS_VIEW_DESC finalUavDesc{};
+	finalUavDesc.Format = DXGI_FORMAT_UNKNOWN;
+	finalUavDesc.ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
+	finalUavDesc.Buffer.FirstElement = 0;
+	finalUavDesc.Buffer.NumElements = 1;
+	if (FAILED(device->CreateUnorderedAccessView(finalResultBuffer_.Get(), &finalUavDesc, &finalResultUav_))) {
+		return false;
+	}
+
+	D3D11_BUFFER_DESC readbackDesc = finalResultDesc;
 	readbackDesc.Usage = D3D11_USAGE_STAGING;
 	readbackDesc.BindFlags = 0;
 	readbackDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 	readbackDesc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-	if (FAILED(device->CreateBuffer(&readbackDesc, nullptr, &groupReadbackBuffer_))) {
-		return false;
+	for (auto& readbackBuffer : finalReadbackBuffers_) {
+		if (FAILED(device->CreateBuffer(&readbackDesc, nullptr, &readbackBuffer))) {
+			return false;
+		}
 	}
 
 	return true;

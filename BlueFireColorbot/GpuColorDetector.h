@@ -5,6 +5,7 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
+#include <array>
 #include <cstdint>
 
 namespace colourbot {
@@ -42,7 +43,9 @@ private:
 		std::uint32_t found{};
 	};
 
-	bool CreateShader(ID3D11Device* device);
+	static constexpr int kReadbackBufferCount = 2;
+
+	bool CreateShaders(ID3D11Device* device);
 	bool CreateBuffers(ID3D11Device* device);
 	bool CreateSourceView(ID3D11Device* device, ID3D11Texture2D* sourceTexture);
 
@@ -50,13 +53,19 @@ private:
 	int height_{ 0 };
 	int groupsX_{ 0 };
 	int groupsY_{ 0 };
+	int readbackWriteIndex_{ 0 };
+	std::array<bool, kReadbackBufferCount> readbackReady_{};
 
-	Microsoft::WRL::ComPtr<ID3D11ComputeShader> computeShader_;
+	Microsoft::WRL::ComPtr<ID3D11ComputeShader> scanComputeShader_;
+	Microsoft::WRL::ComPtr<ID3D11ComputeShader> reduceComputeShader_;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> constantsBuffer_;
 	Microsoft::WRL::ComPtr<ID3D11Buffer> groupResultBuffer_;
-	Microsoft::WRL::ComPtr<ID3D11Buffer> groupReadbackBuffer_;
+	Microsoft::WRL::ComPtr<ID3D11Buffer> finalResultBuffer_;
+	std::array<Microsoft::WRL::ComPtr<ID3D11Buffer>, kReadbackBufferCount> finalReadbackBuffers_{};
 	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> sourceTextureSrv_;
+	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> groupResultSrv_;
 	Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> groupResultUav_;
+	Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> finalResultUav_;
 };
 
 } // namespace colourbot
